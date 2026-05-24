@@ -1,0 +1,46 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or ref to publish (e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install SoftHSM2
+        run: |
+          sudo apt-get install -y softhsm2
+          softhsm2-util --init-token --free --label "kxco-test" --pin 1234 --so-pin 0000
+
+      - run: npm ci
+      - run: npm test
+        env:
+          PKCS11_LIB: /usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so
+          PKCS11_PIN: "1234"
+          PKCS11_SLOT: "0"
+
+      - name: Publish
+        run: npm publish --access public --no-provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
