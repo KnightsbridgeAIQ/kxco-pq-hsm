@@ -121,11 +121,13 @@ export class Pkcs11Backend {
 
   async store(label, alg, publicKey, secretKey) {
     this.#assertOpen()
-    const mod = await loadMod()
-    const iv  = this.#p11.C_GenerateRandom(this.#session, Buffer.alloc(16))
-
+    const mod  = await loadMod()
+    const iv   = this.#p11.C_GenerateRandom(this.#session, Buffer.alloc(16))
+    const data = Buffer.from(secretKey)
+    // pkcs11js v2: C_Encrypt(session, input, outputBuffer) — AES-CBC-PAD always adds one full padding block
+    const encOut = Buffer.alloc((Math.floor(data.length / 16) + 1) * 16)
     this.#p11.C_EncryptInit(this.#session, this.#cbcParams(mod, iv), this.#wrapKey)
-    const wrapped = this.#p11.C_Encrypt(this.#session, Buffer.from(secretKey))
+    const wrapped = this.#p11.C_Encrypt(this.#session, data, encOut)
 
     this.#store.set(label, {
       alg,
@@ -141,8 +143,11 @@ export class Pkcs11Backend {
     const entry = this.#store.get(label)
     if (!entry) throw new KxcoPqHsmError(`key not found: ${label}`)
 
+    const enc    = unb64u(entry.wrapped)
+    // pkcs11js v2: C_Decrypt(session, input, outputBuffer) — output ≤ input length after padding removal
+    const decOut = Buffer.alloc(enc.length)
     this.#p11.C_DecryptInit(this.#session, this.#cbcParams(mod, unb64u(entry.iv)), this.#wrapKey)
-    const secretKey = this.#p11.C_Decrypt(this.#session, unb64u(entry.wrapped))
+    const secretKey = this.#p11.C_Decrypt(this.#session, enc, decOut)
     return { alg: entry.alg, secretKey: new Uint8Array(secretKey) }
   }
 
