@@ -122,7 +122,7 @@ export class Pkcs11Backend {
   async store(label, alg, publicKey, secretKey) {
     this.#assertOpen()
     const mod = await loadMod()
-    const iv  = this.#p11.C_GenerateRandom(this.#session, 16)
+    const iv  = this.#p11.C_GenerateRandom(this.#session, Buffer.alloc(16))
 
     this.#p11.C_EncryptInit(this.#session, this.#cbcParams(mod, iv), this.#wrapKey)
     const wrapped = this.#p11.C_Encrypt(this.#session, Buffer.from(secretKey))
