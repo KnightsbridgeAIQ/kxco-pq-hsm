@@ -5,7 +5,9 @@ let _pkcs11mod = null
 async function loadMod() {
   if (_pkcs11mod) return _pkcs11mod
   try {
-    _pkcs11mod = await import('pkcs11js')
+    const imported = await import('pkcs11js')
+    // Native CJS addon: ESM import() wraps it in { default: exports }; named exports are unavailable
+    _pkcs11mod = imported.default ?? imported
     return _pkcs11mod
   } catch {
     throw new KxcoPqHsmError('pkcs11js is not installed — run: npm install pkcs11js')
