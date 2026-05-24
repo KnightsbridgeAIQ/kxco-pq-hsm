@@ -19,8 +19,9 @@ jobs:
       - name: Install SoftHSM2
         run: |
           sudo apt-get install -y softhsm2
-          sudo mkdir -p /var/lib/softhsm/tokens
-          softhsm2-util --init-token --free --label "kxco-test" --pin 1234 --so-pin 0000
+          mkdir -p /tmp/softhsm2-tokens
+          echo "directories.tokendir = /tmp/softhsm2-tokens/" > /tmp/softhsm2.conf
+          SOFTHSM2_CONF=/tmp/softhsm2.conf softhsm2-util --init-token --free --label "kxco-test" --pin 1234 --so-pin 0000
 
       - run: npm ci
       - run: npm test
@@ -28,3 +29,4 @@ jobs:
           PKCS11_LIB: /usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so
           PKCS11_PIN: "1234"
           PKCS11_SLOT: "0"
+          SOFTHSM2_CONF: /tmp/softhsm2.conf
