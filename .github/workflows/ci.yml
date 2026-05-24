@@ -19,6 +19,7 @@ jobs:
       - name: Install SoftHSM2
         run: |
           sudo apt-get install -y softhsm2
+          sudo mkdir -p /var/lib/softhsm/tokens
           softhsm2-util --init-token --free --label "kxco-test" --pin 1234 --so-pin 0000
 
       - run: npm ci
