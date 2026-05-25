@@ -1,5 +1,10 @@
 # kxco-pq-hsm
 
+[![npm](https://img.shields.io/npm/v/kxco-pq-hsm?label=npm&color=b0964f)](https://www.npmjs.com/package/kxco-pq-hsm)
+[![Socket](https://socket.dev/api/badge/npm/package/kxco-pq-hsm)](https://socket.dev/npm/package/kxco-pq-hsm)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
+[![node](https://img.shields.io/node/v/kxco-pq-hsm.svg)](https://nodejs.org)
+
 HSM-backed post-quantum key management: ML-DSA-65 signing and ML-KEM-768 decapsulation through a hardware security module boundary. Secret keys are decrypted, used, and zeroed in one atomic operation — they never rest in plaintext memory between calls. Three backends: in-memory (dev), Argon2id-encrypted file, and PKCS#11 (SoftHSM2, Luna, Utimaco, YubiKey).
 
 ## Install
@@ -92,6 +97,18 @@ await hsm.deleteKey(label)
 | [`kxco-pq-attest`](https://www.npmjs.com/package/kxco-pq-attest) | Payload attestation envelopes |
 | [`kxco-pq-audit`](https://www.npmjs.com/package/kxco-pq-audit) | Tamper-evident operation log |
 | [`kxco-pq-sdk`](https://www.npmjs.com/package/kxco-pq-sdk) | `AuditedHsm` + `KxcoIdentity` |
+
+## Security
+
+Cryptographic operations are provided by [Noble post-quantum](https://github.com/paulmillr/noble-post-quantum), [Noble hashes](https://github.com/paulmillr/noble-hashes), and [Noble ciphers](https://github.com/paulmillr/noble-ciphers) — independently audited by Cure53 (2024). All ML-DSA-65 and ML-KEM-768 operations conform to NIST FIPS 204 and FIPS 203. Secret key material is held in memory only for the duration of a single operation and zeroed immediately after.
+
+To report a vulnerability, open a [private security advisory](https://github.com/JackKXCO/kxco-pq-hsm/security/advisories/new) or email **security@kxco.ai**.
+
+## Funding
+
+Maintained by **Shayne Heffernan** and **John Heffernan** at [KXCO by Knightsbridge](https://kxco.ai).
+
+[Knightsbridge Law](https://knightsbridge.law) · [target150.com](https://target150.com) · [livetradingnews.com](https://livetradingnews.com)
 
 ## License
 

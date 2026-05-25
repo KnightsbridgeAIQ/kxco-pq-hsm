@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "HSM-backed post-quantum key management: ML-DSA-65 signing and ML-KEM-768 decapsulation through a hardware security module boundary. Three backends: in-memory (dev), Argon2id-encrypted file, and PKCS#11 (SoftHSM2, Luna, Utimaco, YubiKey).",
   "keywords": [
     "post-quantum",
@@ -13,7 +13,15 @@
     "fips-203",
     "fips-204",
     "key-management",
-    "kxco"
+    "kxco",
+    "hardware-security-module",
+    "softhsm2",
+    "yubikey",
+    "luna",
+    "argon2",
+    "key-storage",
+    "zero-trust",
+    "key-protection"
   ],
   "license": "Apache-2.0",
   "author": "KXCO by Knightsbridge <hello@kxco.ai>",
@@ -57,6 +65,7 @@
   "scripts": {
     "test": "node --test --test-timeout=60000 test/hsm.test.js"
   },
+  "funding": "https://kxco.ai",
   "publishConfig": {
     "provenance": true,
     "access": "public"
