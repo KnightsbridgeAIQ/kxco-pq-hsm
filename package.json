@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "HSM-backed post-quantum key management: ML-DSA-65 signing and ML-KEM-768 decapsulation through a hardware security module boundary. Three backends: in-memory (dev), Argon2id-encrypted file, and PKCS#11 (SoftHSM2, Luna, Utimaco, YubiKey).",
   "keywords": [
     "post-quantum",
@@ -30,9 +30,14 @@
     "url": "https://github.com/JackKXCO/kxco-pq-hsm/issues"
   },
   "type": "module",
-  "main": "src/index.js",
+  "sideEffects": false,
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
   },
   "files": [
     "src",
@@ -53,6 +58,7 @@
     "test": "node --test --test-timeout=60000 test/hsm.test.js"
   },
   "publishConfig": {
+    "provenance": true,
     "access": "public"
   }
 }
