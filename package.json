@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "HSM-backed post-quantum key management: ML-DSA-65 signing and ML-KEM-768 decapsulation through a hardware security module boundary. Three backends: in-memory (dev), Argon2id-encrypted file, and PKCS#11 (SoftHSM2, Luna, Utimaco, YubiKey).",
   "keywords": [
     "post-quantum",
