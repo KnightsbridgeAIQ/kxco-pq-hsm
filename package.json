@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "ML-DSA-65 signing and ML-KEM-768 decapsulation through a hardware security module boundary — private keys never leave the HSM.",
   "keywords": [
     "post-quantum",
@@ -24,7 +24,7 @@
     "key-protection"
   ],
   "license": "Apache-2.0",
-  "author": "KXCO by Knightsbridge <hello@kxco.ai>",
+  "author": "Shayne Heffernan and John Heffernan",
   "contributors": [
     {
       "name": "Shayne Heffernan"
@@ -61,7 +61,7 @@
   "dependencies": {
     "@noble/ciphers": "^1.0.0",
     "@noble/hashes": "^1.7.0",
-    "kxco-post-quantum": "^1.1.6"
+    "kxco-post-quantum": "^1.2.0"
   },
   "optionalDependencies": {
     "pkcs11js": "^2.1.0"
