@@ -34,7 +34,7 @@ function suite(name, makeHsm, teardown) {
       const pubKey  = await hsm.getPublicKey('dsa-key')
       const message = new TextEncoder().encode('kxco-pq-hsm test message')
       const sig     = await hsm.sign('dsa-key', message)
-      assert.ok(mlDsa.ml_dsa65.verify(pubKey, message, sig))
+      assert.ok(mlDsa.verify(pubKey, message, Buffer.from(sig).toString('hex')))
     })
 
     test('keygen ml-kem-768 returns publicKey', async () => {
@@ -45,7 +45,7 @@ function suite(name, makeHsm, teardown) {
 
     test('encapsulate + decapsulate round-trip', async () => {
       const pubKey  = await hsm.getPublicKey('kem-key')
-      const { cipherText, sharedSecret: ss1 } = mlKem.ml_kem768.encapsulate(pubKey)
+      const { cipherText, sharedSecret: ss1 } = mlKem.encapsulate(pubKey)
       const ss2 = await hsm.decapsulate('kem-key', cipherText)
       assert.deepEqual(ss2, new Uint8Array(ss1))
     })

@@ -193,7 +193,7 @@ Related packages:
 
 Cryptographic operations are provided by [Noble post-quantum](https://github.com/paulmillr/noble-post-quantum), [Noble hashes](https://github.com/paulmillr/noble-hashes), and [Noble ciphers](https://github.com/paulmillr/noble-ciphers) — independently audited by Cure53 (2024). All ML-DSA-65 and ML-KEM-768 operations conform to NIST FIPS 204 and FIPS 203. Secret key material is held in memory only for the duration of a single operation and zeroed immediately after.
 
-To report a vulnerability, open a [private security advisory](https://github.com/JackKXCO/kxco-pq-hsm/security/advisories/new) or email **security@kxco.ai**.
+To report a vulnerability, open a [private security advisory](https://github.com/KnightsbridgeAIQ/kxco-pq-hsm/security/advisories/new) or email **security@kxco.ai**.
 
 ## License
 

@@ -1,0 +1,27 @@
+name: Dependabot auto-merge
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: automerge
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse major version bumps
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          vers=$(echo "$TITLE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -2)
+          count=$(echo "$vers" | grep -c . || true)
+          if [ "$count" -ne 2 ]; then echo "cannot parse versions - leaving for human review"; exit 1; fi
+          from=$(echo "$vers" | sed -n 1p | cut -d. -f1)
+          to=$(echo "$vers" | sed -n 2p | cut -d. -f1)
+          if [ "$from" != "$to" ]; then echo "major bump ($from -> $to) - leaving for human review"; exit 1; fi
+      - name: Enable auto-merge (merges when required checks pass)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
