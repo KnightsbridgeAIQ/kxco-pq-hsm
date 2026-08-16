@@ -26,7 +26,7 @@ export class PqHsm {
       throw new KxcoPqHsmError(`key '${label}' is ${alg} — sign requires ml-dsa-65`)
     }
     try {
-      return mlDsa.ml_dsa65.sign(secretKey, new Uint8Array(message))
+      return Buffer.from(mlDsa.sign(secretKey, new Uint8Array(message)), 'hex')
     } finally {
       secretKey.fill(0)
     }
@@ -39,7 +39,7 @@ export class PqHsm {
     }
     try {
       return new Uint8Array(
-        mlKem.ml_kem768.decapsulate(new Uint8Array(ciphertext), new Uint8Array(secretKey))
+        mlKem.decapsulate(new Uint8Array(ciphertext), new Uint8Array(secretKey))
       )
     } finally {
       secretKey.fill(0)
