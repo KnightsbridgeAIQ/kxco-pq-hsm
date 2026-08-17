@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { argon2id } from '@noble/hashes/argon2'
-import { gcm } from '@noble/ciphers/aes'
-import { randomBytes } from '@noble/ciphers/webcrypto'
+import { argon2id } from '@noble/hashes/argon2.js'
+import { gcm } from '@noble/ciphers/aes.js'
+import { randomBytes } from '@noble/ciphers/utils.js'
 import { KxcoPqHsmError } from '../errors.js'
 
 const VERSION = '1'
