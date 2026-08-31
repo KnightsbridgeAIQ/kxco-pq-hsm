@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "ML-DSA-65 signing and ML-KEM-768 decapsulation through a hardware security module boundary, private keys never leave the HSM.",
   "keywords": [
     "post-quantum",
