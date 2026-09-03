@@ -5,7 +5,9 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 [![node](https://img.shields.io/node/v/kxco-pq-hsm.svg)](https://nodejs.org)
 
-HSM integration layer for the KXCO post-quantum stack. ML-DSA-65 signing and ML-KEM-768 decapsulation through a secure key boundary — the private key never leaves the HSM.
+HSM integration layer for the KXCO post-quantum stack. ML-DSA-65 signing and ML-KEM-768 decapsulation through a secure key boundary.
+
+Where the token offers an ML-DSA mechanism, the key is generated on it, marked non-extractable, and signed with inside it: the private key never enters host memory. Where it does not, the token holds an AES-256 wrapping key and the ML-DSA key is unwrapped to sign and zeroed after. `hsm.signingMode` reports which of the two is in force, so it is a fact you can assert rather than an assumption.
 
 ## Release integrity
 
