@@ -42,9 +42,37 @@ Every release of this package is checkable without asking us for anything.
 
 ### How `Pkcs11Backend` protects a key
 
-Your HSM holds an AES-256 wrapping key that never leaves it. The ML-DSA-65 private key is stored encrypted under that key, unwrapped for the duration of a single signature, and zeroed immediately afterwards. **A stolen disk, database or backup yields nothing without the token.**
+Two modes, and the package tells you which one is in force:
 
-Signing itself runs in process, because no PKCS#11 token on the market implements ML-DSA-65 today. When token firmware ships FIPS 204, this backend gains on-token signing behind the same interface — no application change. If your control requires the key never to be in host memory at any instant, an ML-DSA KMS key spec is the route available now.
+```js
+const hsm = new PqHsm(new Pkcs11Backend({
+  libraryPath: '/usr/lib/softhsm/libsofthsm2.so',
+  pin: process.env.HSM_PIN,
+  mlDsaMechanism: 0x0000001d,   // your token's ML-DSA mechanism
+}))
+hsm.signingMode   // 'on-token' | 'in-process'
+```
+
+**On-token.** Supply `mlDsaMechanism` and the key is generated on the token,
+marked non-extractable, and signed with inside it. The private key never enters
+host memory. This satisfies a control that says key material must not leave the
+cryptographic boundary.
+
+The mechanism value is yours to supply, not ours to guess. PKCS#11 gained
+ML-DSA mechanisms in v3.2 and tokens that shipped PQ firmware earlier expose it
+under a vendor-defined value, so there is no constant that is right across an
+estate. `open()` checks the value against the token's own `C_GetMechanismList`
+and **refuses to start** if it is absent — a silent fallback would leave you
+believing a control is in force when it is not.
+
+**Wrapped.** Omit `mlDsaMechanism` and the token holds an AES-256 key that never
+leaves it, with the ML-DSA key stored encrypted under it. To sign, the key is
+unwrapped into host memory, used, and zeroed. A stolen disk, database or backup
+yields nothing without the token — but the key is in memory for the duration of
+each signature, so this does not meet a never-leaves-the-boundary control.
+
+`signingMode` exists so that distinction is something you read, not something
+you assume.
 
 ## Install
 
@@ -64,7 +92,7 @@ npm install kxco-pq-hsm pkcs11js
 |---|---|---|---|
 | In-memory | `MemoryBackend` | Development and testing | Keys lost on process exit; no persistence |
 | Encrypted file | `FileBackend` | Lightweight production; no hardware required | Argon2id (t=3, m=65536, p=1) + AES-256-GCM; keys at rest are encrypted |
-| PKCS#11 | `Pkcs11Backend` | Production key storage on an HSM you already run | The HSM holds an **AES-256 wrapping key** that never leaves it. The ML-DSA private key is unwrapped into process memory to sign, then zeroed. **Signing does not happen on the token** |
+| PKCS#11 | `Pkcs11Backend` | Production key custody on an HSM you already run | **On-token** where the token offers an ML-DSA mechanism: the key is generated on it, marked non-extractable, and never enters host memory. Otherwise **wrapped**: the token holds an AES-256 key that never leaves it and the ML-DSA key is stored encrypted under it. `hsm.signingMode` says which |
 
 ## Quick start
 

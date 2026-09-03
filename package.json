@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.2.0",
-  "description": "ML-DSA-65 signing and ML-KEM-768 decapsulation through a hardware security module boundary, private keys never leave the HSM.",
+  "version": "1.3.0",
+  "description": "Post-quantum key custody for regulated institutions. ML-DSA-65 signing and ML-KEM-768 decapsulation through a PKCS#11 token, HSM-held AES wrapping, or an encrypted file. Signs ON the token where the token offers an ML-DSA mechanism, so the private key never enters host memory — and reports which mode is in force rather than leaving you to assume.",
   "keywords": [
     "post-quantum",
     "pqc",
@@ -69,7 +69,7 @@
     "pkcs11js": "^2.1.0"
   },
   "scripts": {
-    "test": "node --test --test-timeout=60000 test/hsm.test.js"
+    "test": "node --test --test-timeout=60000 test/hsm.test.js test/signing-mode.test.js"
   },
   "funding": "https://kxco.ai",
   "publishConfig": {

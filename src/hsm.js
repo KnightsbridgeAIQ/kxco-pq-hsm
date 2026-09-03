@@ -20,7 +20,24 @@ export class PqHsm {
     return { publicKey: kp.publicKey }
   }
 
+  /**
+   * Where a signature is actually produced: 'on-token' or 'in-process'.
+   *
+   * Read it rather than assuming. A control that requires key material never
+   * to leave the cryptographic boundary is satisfied only by 'on-token'.
+   */
+  get signingMode() {
+    return this._backend.signingMode === 'on-token' ? 'on-token' : 'in-process'
+  }
+
   async sign(label, message) {
+    // Prefer the token. Where the backend can sign inside the hardware, the
+    // private key never enters host memory at all, and there is nothing here
+    // to zero afterwards because nothing was ever unwrapped.
+    if (this._backend.signingMode === 'on-token' && typeof this._backend.signOnToken === 'function') {
+      return Buffer.from(await this._backend.signOnToken(label, new Uint8Array(message)))
+    }
+
     const { alg, secretKey } = await this._backend.loadSecret(label)
     if (alg !== 'ml-dsa-65') {
       throw new KxcoPqHsmError(`key '${label}' is ${alg} — sign requires ml-dsa-65`)
@@ -28,6 +45,8 @@ export class PqHsm {
     try {
       return Buffer.from(mlDsa.sign(secretKey, new Uint8Array(message)), 'hex')
     } finally {
+      // The key was in host memory for the duration of this call. Zeroing it
+      // bounds the window; it does not remove it.
       secretKey.fill(0)
     }
   }
