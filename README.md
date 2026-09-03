@@ -36,12 +36,15 @@ Every release of this package is checkable without asking us for anything.
 
 ## When to use this
 
-- Regulated institutions that need hardware-backed key storage
-- Production deployments where private keys must never exist in process memory between operations
-- Compliance requirements such as FIPS 140-2/3, where a hardware boundary is mandatory
+- Regulated institutions that need private keys encrypted at rest under a key held in hardware
+- Production deployments where private keys must not sit in process memory **between** operations
 - Any deployment where you want to audit and control every key operation through a single interface
 
-If you are prototyping or running tests, use `MemoryBackend`. Move to `FileBackend` or `Pkcs11Backend` before any production deployment.
+### How `Pkcs11Backend` protects a key
+
+Your HSM holds an AES-256 wrapping key that never leaves it. The ML-DSA-65 private key is stored encrypted under that key, unwrapped for the duration of a single signature, and zeroed immediately afterwards. **A stolen disk, database or backup yields nothing without the token.**
+
+Signing itself runs in process, because no PKCS#11 token on the market implements ML-DSA-65 today. When token firmware ships FIPS 204, this backend gains on-token signing behind the same interface — no application change. If your control requires the key never to be in host memory at any instant, an ML-DSA KMS key spec is the route available now.
 
 ## Install
 
@@ -61,7 +64,7 @@ npm install kxco-pq-hsm pkcs11js
 |---|---|---|---|
 | In-memory | `MemoryBackend` | Development and testing | Keys lost on process exit; no persistence |
 | Encrypted file | `FileBackend` | Lightweight production; no hardware required | Argon2id (t=3, m=65536, p=1) + AES-256-GCM; keys at rest are encrypted |
-| PKCS#11 | `Pkcs11Backend` | Hardware-backed production; FIPS 140-2/3 | Private key material wrapped by an AES-256 key that never leaves the HSM |
+| PKCS#11 | `Pkcs11Backend` | Production key storage on an HSM you already run | The HSM holds an **AES-256 wrapping key** that never leaves it. The ML-DSA private key is unwrapped into process memory to sign, then zeroed. **Signing does not happen on the token** |
 
 ## Quick start
 
@@ -218,9 +221,19 @@ Related packages:
 
 ## Security
 
-Cryptographic operations are provided by [Noble post-quantum](https://github.com/paulmillr/noble-post-quantum), [Noble hashes](https://github.com/paulmillr/noble-hashes), and [Noble ciphers](https://github.com/paulmillr/noble-ciphers) — independently audited by Cure53 (2024). All ML-DSA-65 and ML-KEM-768 operations conform to NIST FIPS 204 and FIPS 203. Secret key material is held in memory only for the duration of a single operation and zeroed immediately after.
+**ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
-To report a vulnerability, open a [private security advisory](https://github.com/KnightsbridgeAIQ/kxco-pq-hsm/security/advisories/new) or email **security@kxco.ai**.
+Evidenced, and reproducible on your own machine:
+
+- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest
+- **225 interoperability checks** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **SLSA provenance** on every published release — verify with `npm audit signatures`
+- **CycloneDX SBOM** published with each release
+- `npm run evidence` regenerates the whole bundle from source
+
+Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
+
+Secret key material is held in memory only for the duration of a single operation and zeroed immediately afterwards.
 
 ## License
 
