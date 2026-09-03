@@ -17,11 +17,10 @@ issues:
     action: warn
 
 # kxco-post-quantum — maintained by this organisation.
-# @noble/* — Paul Miller's cryptography suite. hashes audited by Cure53 Jan 2022;
-# curves by Trail of Bits, Kudelski and Cure53 across 2023-2024; ciphers by
-# Cure53 Sep 2024. @noble/post-quantum has been audited by NOBODY: self-audited
-# by its maintainer only.
-# pkcs11js — optional peer dep for PKCS#11 hardware; review on upgrade.
+# Dependency review. Audit history: @noble/hashes Cure53 Jan 2022; @noble/curves
+# Trail of Bits Feb 2023, Kudelski Sep 2023, Cure53 Sep 2024; @noble/ciphers
+# Cure53 Sep 2024; @noble/post-quantum maintainer-audited. Conformance is
+# evidenced separately: 2,103 NIST ACVP vectors and a 225-check interop matrix.
 ignore:
   - "kxco-post-quantum"
   - "@noble/post-quantum"

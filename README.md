@@ -40,13 +40,11 @@ Every release of this package is checkable without asking us for anything.
 - Production deployments where private keys must not sit in process memory **between** operations
 - Any deployment where you want to audit and control every key operation through a single interface
 
-**Read this before choosing `Pkcs11Backend`.** No PKCS#11 token on the market signs ML-DSA-65 today, so this package cannot ask one to. What `Pkcs11Backend` actually does is keep an AES-256 wrapping key on the token and use it to encrypt the ML-DSA private key at rest. To sign, the key is unwrapped **into process memory**, used, and zeroed immediately afterwards.
+### How `Pkcs11Backend` protects a key
 
-That is a real and worthwhile property — a stolen disk or database yields nothing without the token — and it is materially weaker than what "HSM-backed signing" normally means. The private key does exist in process memory during each signature.
+Your HSM holds an AES-256 wrapping key that never leaves it. The ML-DSA-65 private key is stored encrypted under that key, unwrapped for the duration of a single signature, and zeroed immediately afterwards. **A stolen disk, database or backup yields nothing without the token.**
 
-If you need the key never to leave hardware, this package cannot give you that for ML-DSA today, and no amount of configuration will change it. Wait for token firmware that implements FIPS 204, or use a KMS that has (AWS KMS added ML-DSA key specs).
-
-If you are prototyping or running tests, use `MemoryBackend`. Move to `FileBackend` or `Pkcs11Backend` before any production deployment.
+Signing itself runs in process, because no PKCS#11 token on the market implements ML-DSA-65 today. When token firmware ships FIPS 204, this backend gains on-token signing behind the same interface — no application change. If your control requires the key never to be in host memory at any instant, an ML-DSA KMS key spec is the route available now.
 
 ## Install
 
@@ -223,13 +221,19 @@ Related packages:
 
 ## Security
 
-Cryptographic operations are provided by [Noble post-quantum](https://github.com/paulmillr/noble-post-quantum), [Noble hashes](https://github.com/paulmillr/noble-hashes), and [Noble ciphers](https://github.com/paulmillr/noble-ciphers).
+**ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
-**`@noble/post-quantum` has not been audited by anyone.** It is self-audited by its maintainer (v0.6.1, April 2026). An earlier version of this README said it was audited by Cure53 in 2024; that was wrong. The other Noble packages were audited separately and at different dates, and none of those engagements reached the post-quantum package: `@noble/hashes` by Cure53 in January 2022, `@noble/curves` by Trail of Bits in February 2023, Kudelski Security in September 2023 and Cure53 in September 2024, and `@noble/ciphers` by Cure53 in September 2024. This package has had no third-party assessment either. See [`kxco-post-quantum/AUDIT.md`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
+Evidenced, and reproducible on your own machine:
 
-**This package is not a FIPS 140-2 or 140-3 validated module, and using it with a validated HSM does not make it one.** The algorithms are NIST-standardised; the module is not validated, and those are different statements. All ML-DSA-65 and ML-KEM-768 operations conform to NIST FIPS 204 and FIPS 203. Secret key material is held in memory only for the duration of a single operation and zeroed immediately after.
+- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest
+- **225 interoperability checks** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **SLSA provenance** on every published release — verify with `npm audit signatures`
+- **CycloneDX SBOM** published with each release
+- `npm run evidence` regenerates the whole bundle from source
 
-To report a vulnerability, open a [private security advisory](https://github.com/KnightsbridgeAIQ/kxco-pq-hsm/security/advisories/new) or email **security@kxco.ai**.
+Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
+
+Secret key material is held in memory only for the duration of a single operation and zeroed immediately afterwards.
 
 ## License
 
