@@ -30,7 +30,7 @@ Every release of this package is checkable without asking us for anything.
   Every GitHub Action is pinned by 40-character commit SHA.
 - **Conformance underneath.** The cryptography comes from
   [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which
-  is run against **2,103 NIST ACVP vectors (0 failed)** and a **225-check
+  is run against **2,103 NIST ACVP vectors: 1,793 passed, 0 failed, 310 skipped** and a **225-check
   cross-implementation interoperability matrix** against liboqs, Bouncy Castle
   and two pure-Python implementations, in both directions and with negative
   controls. Its published tarball also rebuilds bit-for-bit from its own tag,
@@ -258,8 +258,8 @@ Related packages:
 
 Evidenced, and reproducible on your own machine:
 
-- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest
-- **225 interoperability checks** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest: 1,793 passed, 0 failed, 310 skipped, where each skip is the library refusing a pre-hash weaker than the parameter set
+- **225 interoperability checks passed, 0 failed, 42 not applicable** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
 - **SLSA provenance** on every published release — verify with `npm audit signatures`
 - **CycloneDX SBOM** published with each release
 - `npm run evidence` regenerates the whole bundle from source
