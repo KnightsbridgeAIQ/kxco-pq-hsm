@@ -213,12 +213,15 @@ import { KxcoPqHsmError } from 'kxco-pq-hsm'
 ```
 All errors thrown by this package are instances of `KxcoPqHsmError`.
 
-## What this does NOT do
+## Where this fits
 
-- **Not a general crypto library.** It does not expose raw ML-DSA or ML-KEM primitives. Use `kxco-post-quantum` for that.
-- **Not responsible for key generation algorithms.** The underlying post-quantum primitives come from `kxco-post-quantum`; this package provides the storage and boundary layer only.
-- **Not certificate management.** It does not issue, sign, or parse X.509 certificates.
-- **Not a KMS.** It does not manage key rotation schedules, access policies, or audit logs. Those concerns belong to the application layer or to `kxco-pq-sdk`.
+The boundary between a key and the application that uses it. It signs and
+decapsulates through a token, an HSM-held wrapping key, or an encrypted file,
+and reports which of those is in force.
+
+- [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum) for raw ML-DSA and ML-KEM primitives
+- [`kxco-pq-audit`](https://www.npmjs.com/package/kxco-pq-audit) for a tamper-evident record of what was signed
+- Rotation schedules and access policy belong to your KMS or your application
 
 ## Part of the KXCO stack
 
