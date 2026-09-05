@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.3.2
+
+### Corrected
+
+Documentation only. No code change, no behaviour change.
+
+The README claimed that where a token offers an ML-DSA mechanism, the key "is
+generated on it, marked non-extractable, and never enters host memory." **The
+code has never done this.**
+
+- `PqHsm.keygen` generates the keypair in host memory with `ml_dsa65.keygen()`
+  and passes the secret to the backend.
+- `Pkcs11Backend.store` wraps that secret under the token-held AES key and
+  records `{ alg, publicKey, iv, wrapped }`. No token object handle is stored.
+- `signOnToken` requires `entry.handle`, which is read in three places and
+  assigned in none, so it throws for every key this package generates.
+- There is no `C_GenerateKeyPair` call anywhere in the package.
+
+`signingMode === 'on-token'` therefore means only that the token advertises an
+ML-DSA mechanism. It is not a measurement of where a key lives or where a
+signature was produced, and it must not be presented to an auditor as one.
+
+Also documented: `Pkcs11Backend` holds wrapped keys in a process-local `Map`.
+The AES wrapping key is a persistent token object; the wrapped ML-DSA keys are
+not persisted by the backend and do not survive a restart.
+
+The package still does what it always did — private key material encrypted at
+rest under a key the token will not release, zeroed after each use. That is a
+real property. It is not never-leaves-the-module custody, and the previous
+wording conflated the two.
+
+On-token generation is a later release. It needs `C_GenerateKeyPair` with
+`CKA_EXTRACTABLE=false`, a persisted object handle, `C_Sign` through that
+handle, and a probe that exercises the real PKCS#11 path rather than a test
+double. The old sentence can be restored when the code earns it.
+
 ## 1.2.0
 
 ### Corrected
