@@ -7,10 +7,29 @@ export class PqHsm {
     this._backend = backend
   }
 
+  /**
+   * Generate a key.
+   *
+   * Where the backend can generate on the token, it does, and the private key
+   * is never in this process at any point. Otherwise the pair is generated
+   * here and handed to the backend to protect at rest, which is a real
+   * property but a different one: the key exists in host memory at generation
+   * and again on every signature.
+   *
+   * Through 1.3.x there was only the second path, while `signingMode` could
+   * still report 'on-token'. That is the defect this release closes.
+   */
   async keygen(label, alg = 'ml-dsa-65') {
     if (alg !== 'ml-dsa-65' && alg !== 'ml-kem-768') {
       throw new KxcoPqHsmError(`unsupported algorithm '${alg}' — use 'ml-dsa-65' or 'ml-kem-768'`)
     }
+
+    if (alg === 'ml-dsa-65' &&
+        this._backend.canGenerateOnToken &&
+        typeof this._backend.keygenOnToken === 'function') {
+      return this._backend.keygenOnToken(label, alg)
+    }
+
     const kp = alg === 'ml-dsa-65'
       ? mlDsa.ml_dsa65.keygen()
       : mlKem.ml_kem768.keygen()

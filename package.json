@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.3.2",
-  "description": "ML-DSA-65 and ML-KEM-768 key custody. Private keys are encrypted at rest under an AES key your PKCS#11 token holds and never releases. Keys are generated in host memory: on-token generation is NOT implemented. Not never-leaves-the-module custody.",
+  "version": "1.4.0",
+  "description": "ML-DSA-65 and ML-KEM-768 key custody on a PKCS#11 HSM. Generates ML-DSA keys on the token with CKA_EXTRACTABLE=false and signs with C_Sign, so the private key never enters host memory. signingMode reports on-token only after a probe signature proves it.",
   "keywords": [
     "post-quantum",
     "pqc",
@@ -69,11 +69,15 @@
     "pkcs11js": "^2.1.0"
   },
   "scripts": {
-    "test": "node --test --test-timeout=60000 test/hsm.test.js test/signing-mode.test.js"
+    "test": "node --test test/hsm.test.js test/signing-mode.test.js",
+    "test:softhsm": "node --test test/softhsm-integration.test.js"
   },
   "funding": "https://kxco.ai",
   "publishConfig": {
     "provenance": true,
     "access": "public"
+  },
+  "devDependencies": {
+    "pkcs11js": "^2.1.6"
   }
 }

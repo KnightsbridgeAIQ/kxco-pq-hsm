@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+
+**On-token key generation and signing.** `Pkcs11Backend.keygenOnToken` calls
+`C_GenerateKeyPair` on the token with `CKA_EXTRACTABLE=false` and
+`CKA_SENSITIVE=true`. The private key never enters host memory at any point,
+signing is `C_Sign` through the token handle, and both objects are
+`CKA_TOKEN=true` so a key survives a process restart and is located again by
+`CKA_ID`. `PqHsm.keygen` prefers this path whenever the token offers both
+mechanisms.
+
+**Custody is proved, not advertised.** `signingMode` returns `'on-token'` only
+after a probe signature has been produced through the token handle. A mechanism
+list says what a token offers; only a signature says what happened. If the
+token generates a pair and cannot sign with it, `keygenOnToken` throws rather
+than returning a key that misreports its custody.
+
+**Keys are destroyed on the token.** `deleteKey` calls `C_DestroyObject` on
+both objects. Previously it removed a local map entry and left the private key
+on the partition.
+
+### Fixed
+
+`entry.handle` is now assigned. It was read in three places and written in
+none, which is why `signOnToken` threw `no token handle` for every key the
+package generated.
+
+`open()` repopulates the key store from token objects. Previously only the AES
+wrapping key was reloaded and every generated key vanished with the process.
+
+### Notes
+
+The claim retracted in 1.3.2 is restored, and it is now owned by
+`test/softhsm-integration.test.js` running against a real PKCS#11 token rather
+than by a handwritten fake backend. 1.3.1 claimed it, 1.3.2 retracted it, 1.4.0
+implements it.
+
+No released SoftHSM can run that test: tag 2.7.0 has zero occurrences of
+`CKM_ML_DSA` and support exists only on `master`. `ci/Dockerfile.softhsm`
+builds it. The image deliberately uses Debian's `nodejs` rather than an
+official tarball, because a bundled OpenSSL without ML-DSA captures the
+token library's EVP calls and generation fails with `CKR_GENERAL_ERROR`.
+
+This package remains a way to keep keys inside a module you already trust. It
+is not a validated module and confers no FIPS 140-3 validation on anything.
+
 ## 1.3.2
 
 ### Corrected

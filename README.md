@@ -7,24 +7,26 @@
 
 HSM integration layer for the KXCO post-quantum stack. ML-DSA-65 signing and ML-KEM-768 decapsulation, with private key material encrypted at rest under a key the token never releases.
 
-> **Custody notice, 5 September 2026.** Earlier versions of this README, up to
-> and including 1.3.1, said that where a token offers an ML-DSA mechanism the
-> key "is generated on it, marked non-extractable, and never enters host
-> memory." **The code does not do that, and never has.** `PqHsm.keygen`
-> generates the keypair in host memory, and the PKCS#11 backend stores it
-> encrypted under a token-held AES key without recording a token object handle.
-> `signOnToken` therefore fails for every key this package generates.
->
-> `signingMode === 'on-token'` reports only that **the token advertises an
-> ML-DSA mechanism**. It is not a measurement of where a given key lives or
-> where a signature was produced. Do not read it as a custody claim, and do not
-> put it in front of an auditor as one.
->
-> On-token key generation is not implemented in 1.3.x. It requires
-> `C_GenerateKeyPair` with a non-extractable private object and a persisted
-> object handle. Until that ships, this package does not satisfy a control that
-> requires key material never to leave a cryptographic module. See
-> [What this package does not do](#what-this-package-does-not-do).
+On-token custody, where the token supports it. Supply an ML-DSA mechanism and
+`keygen` calls `C_GenerateKeyPair` on the token: the private object is
+`CKA_EXTRACTABLE=false` and `CKA_SENSITIVE=true`, the private key never enters
+host memory at any point, and signing is `C_Sign` through the token handle.
+Both objects are `CKA_TOKEN=true`, so a key survives a process restart and is
+found again by `CKA_ID`.
+
+`signingMode` reports `'on-token'` **only after a probe signature has actually
+been produced through that handle.** A mechanism list is an advertisement; a
+signature is evidence. Where the token cannot generate or sign, the key is
+wrapped under a token-held AES key instead and `signingMode` says `'wrapped'`,
+which enters host memory to sign and does not meet a never-leaves-the-boundary
+control.
+
+> **History, and why this paragraph is worded carefully.** 1.3.1 claimed
+> on-token custody with no `C_GenerateKeyPair` anywhere in the package and no
+> token handle ever stored, so `signOnToken` threw for every key it generated.
+> 1.3.2 retracted the claim without changing behaviour. **1.4.0 implements it**,
+> and the claim is now owned by an integration test against a real PKCS#11
+> token — not by the handwritten fake backend that let the original claim ship.
 
 ## Release integrity
 
@@ -72,19 +74,16 @@ const hsm = new PqHsm(new Pkcs11Backend({
 hsm.signingMode   // 'on-token' | 'in-process'
 ```
 
-**`mlDsaMechanism` is a mechanism check, not a custody switch.** Supplying it
-makes `open()` verify that the token advertises that mechanism, and makes
-`signingMode` report `'on-token'`. It does **not** cause the key to be
-generated on the token: `PqHsm.keygen` runs `ml_dsa65.keygen()` in host memory
-and hands the secret to the backend to wrap. Because no token object handle is
-recorded, `signOnToken` throws `no token handle` for every such key, so a
-configuration that reports `'on-token'` will fail to sign rather than sign
-insecurely.
+**On-token.** Supply `mlDsaMechanism` and `keygen` generates the key pair on
+the token with `C_GenerateKeyPair`. The private object is marked
+`CKA_EXTRACTABLE=false` and `CKA_SENSITIVE=true`; this process never receives
+the private bytes, so there is nothing to zero afterwards because nothing was
+ever held. Signing is `C_Sign` through the token handle.
 
-If you need a custody fact rather than an advertisement, take one signature
-with the key and observe whether it went through the token. That is what KXCO
-Command does at key generation, recording `hsm-on-token` only when a token
-demonstrably produced the signature, and `hsm-in-process` otherwise.
+`signingMode` becomes `'on-token'` only once a probe signature has gone through
+that handle. If the token generates a pair and then cannot sign with it,
+`keygen` throws rather than returning a key that reports custody it does not
+have.
 
 The mechanism value is yours to supply, not ours to guess. PKCS#11 gained
 ML-DSA mechanisms in v3.2 and tokens that shipped PQ firmware earlier expose it
@@ -99,36 +98,58 @@ unwrapped into host memory, used, and zeroed. A stolen disk, database or backup
 yields nothing without the token — but the key is in memory for the duration of
 each signature, so this does not meet a never-leaves-the-boundary control.
 
-This is what the PKCS#11 backend actually does in 1.3.x, in both modes.
-
-Note also that the wrapped keys are held in a `Map` for the life of the
-process. The AES wrapping key is a persistent token object; the wrapped ML-DSA
-keys are not persisted anywhere by this backend, so they do not survive a
-restart. Persist the wrapped material yourself if you need it to.
+Wrapped keys are held for the life of the process; the AES wrapping key is a
+persistent token object but the wrapped ML-DSA blobs are not written to the
+token, so they do not survive a restart. Persist them yourself if you need
+them to. **On-token keys do survive**, because they are token objects.
 
 ## What this package does not do
 
 Stated plainly, because the only people who read this page are the ones for
 whom it matters.
 
-- **It does not generate keys on a token.** There is no `C_GenerateKeyPair`
-  call anywhere in the package. Keys are generated in host memory by
-  `PqHsm.keygen`.
-- **It does not keep private keys inside a cryptographic boundary.** The
-  private key exists in host memory at generation, and again on every signature
-  in wrapped mode, where it is zeroed after use.
-- **It does not record token object handles**, so `signOnToken` cannot address
-  a key on the token and throws for every key the package generates.
-- **`signingMode` is not a custody measurement.** It reflects the token's
-  advertised mechanism list.
-- **It is not a validated cryptographic module** and does not confer FIPS 140-3
-  validation of any level on the software that uses it. A module's certificate
-  covers that module. SoftHSM is a software token and is for testing.
+- **It is not a validated cryptographic module**, and using it confers no FIPS
+  140-3 validation of any level on your software. A certificate covers the
+  module it was issued for. If your control framework requires Level 3 custody,
+  what satisfies it is the HSM's certificate, and what this package does is let
+  you keep the key inside that HSM.
+- **SoftHSM is a software token.** It is what the integration tests run
+  against, and it is for testing. A SoftHSM key is not in Level 3 custody
+  however the mechanism list reads.
+- **`signingMode` is per token, not per key.** It tells you whether a probe
+  signature succeeded on this backend, not that every key on it is on-token. A
+  wrapped key and an on-token key can coexist.
+- **Wrapped keys are not persisted to the token** and do not survive a restart.
+  On-token keys do.
+- **ML-KEM is wrapped only.** `decapsulate` always unwraps into host memory.
+  On-token generation covers ML-DSA.
 
-What it does do is keep private key material encrypted at rest under a key your
-HSM holds and will not release, and zero the plaintext after each use. That is
-a real and useful property. It is not the same property as key material never
-leaving a module, and this page previously conflated the two.
+## Testing on-token custody
+
+The on-token path is owned by an integration test against a real PKCS#11
+token, because a fake backend that implements `signOnToken` will pass
+regardless of what the package does. That is how the original claim shipped.
+
+No released SoftHSM can run it: tag 2.7.0 contains zero occurrences of
+`CKM_ML_DSA`, and support exists only on `master`. `ci/Dockerfile.softhsm`
+builds it against OpenSSL 3.5, which is where ML-DSA lives.
+
+```
+docker build -f ci/Dockerfile.softhsm -t kxco-softhsm-mldsa .
+docker run --rm -v "$PWD":/work:ro kxco-softhsm-mldsa bash -lc '
+  mkdir -p /b && cd /b && cp -r /work/src /work/test /work/package.json .
+  npm install --silent kxco-post-quantum pkcs11js
+  export HSM_LIBRARY_PATH=/opt/softhsm/lib/softhsm/libsofthsm2.so HSM_PIN=1234
+  node --test test/softhsm-integration.test.js'
+```
+
+**Use a Node that links the system OpenSSL.** An official Node tarball bundles
+its own (22.x bundles 3.0.15, which has no ML-DSA), and because `pkcs11js`
+dlopens the token library into that process, SoftHSM's `EVP_PKEY_CTX_new_from_name`
+binds to Node's OpenSSL instead of the 3.5 it was compiled against. The token
+then returns `CKR_GENERAL_ERROR` and its log reads `ML-DSA keygen context
+failed (0x0308010C)` while the identical call in a C program succeeds. The
+image uses Debian's `nodejs` for this reason.
 
 ## Install
 
@@ -148,7 +169,7 @@ npm install kxco-pq-hsm pkcs11js
 |---|---|---|---|
 | In-memory | `MemoryBackend` | Development and testing | Keys lost on process exit; no persistence |
 | Encrypted file | `FileBackend` | Lightweight production; no hardware required | Argon2id (t=3, m=65536, p=1) + AES-256-GCM; keys at rest are encrypted |
-| PKCS#11 | `Pkcs11Backend` | Encrypting keys under a wrapping key your HSM holds | The token holds a persistent, non-extractable AES-256 key; the ML-DSA key is generated in host memory, stored encrypted under it, and unwrapped to sign. `signingMode` reports whether the token advertises an ML-DSA mechanism, **not** where a key lives. On-token generation is not implemented — see the custody notice. Wrapped keys are held in process memory and are not persisted by this backend |
+| PKCS#11 | `Pkcs11Backend` | Production key custody on an HSM you already run | **On-token** where the token offers ML-DSA generation and signing: `C_GenerateKeyPair` on the token, `CKA_EXTRACTABLE=false`, `C_Sign` through the handle, key survives restart, and `signingMode` says `on-token` only after a probe signature proved it. Otherwise **wrapped**: the token holds an AES-256 key that never leaves it and the ML-DSA key is stored encrypted under it, entering host memory to sign |
 
 ## Quick start
 

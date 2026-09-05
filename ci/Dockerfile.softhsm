@@ -1,0 +1,39 @@
+# SoftHSM2 built from master, because ML-DSA is not in any release.
+# Tag 2.7.0 (Jan 2026) has zero occurrences of CKM_ML_DSA; master has 12.
+# ML-DSA in SoftHSM is implemented over OpenSSL, so the base image is chosen
+# for an OpenSSL that actually provides ML-DSA.
+FROM debian:trixie
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git build-essential automake autoconf libtool pkg-config \
+      libssl-dev openssl ca-certificates curl xz-utils procps \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN openssl version && (openssl list -signature-algorithms 2>/dev/null | grep -i -m3 "ML-DSA" || echo "NO ML-DSA IN OPENSSL")
+
+RUN git clone --depth 1 https://github.com/softhsm/SoftHSMv2.git /src/softhsm
+WORKDIR /src/softhsm
+RUN sh autogen.sh \
+ && ./configure --disable-gost --with-crypto-backend=openssl --prefix=/opt/softhsm \
+ && make -j"$(nproc)" && make install
+
+RUN grep -c CKM_ML_DSA src/lib/SoftHSM.cpp || true
+
+# Node from Debian, NOT from nodejs.org, and this is load-bearing.
+#
+# An official Node tarball bundles its own OpenSSL (22.x bundles 3.0.15, which
+# has no ML-DSA). pkcs11js dlopens libsofthsm2.so into that process, and
+# SoftHSM's EVP_PKEY_CTX_new_from_name then resolves against Node's bundled
+# OpenSSL rather than the system 3.5.7 it was compiled against. The token
+# returns CKR_GENERAL_ERROR and the log reads "ML-DSA keygen context failed
+# (0x0308010C)" -- digital envelope routines::unsupported -- while the identical
+# call in a plain C program against system OpenSSL succeeds.
+#
+# Debian's nodejs links the system libcrypto, so both sides agree.
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm python3  && rm -rf /var/lib/apt/lists/*  && node -p "'node ' + process.version + ' openssl ' + process.versions.openssl"
+ENV PATH="/opt/softhsm/bin:${PATH}"
+ENV SOFTHSM2_CONF=/etc/softhsm2.conf
+RUN mkdir -p /var/lib/softhsm/tokens \
+ && printf 'directories.tokendir = /var/lib/softhsm/tokens\nobjectstore.backend = file\nlog.level = INFO\n' > /etc/softhsm2.conf \
+ && softhsm2-util --init-token --slot 0 --label kxco-test --so-pin 1234 --pin 1234
+WORKDIR /work
