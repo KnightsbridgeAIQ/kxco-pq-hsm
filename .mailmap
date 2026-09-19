@@ -1,0 +1,69 @@
+# Canonical identity per person and per machine.
+#
+# WHY. Across 60 repositories the estate carries 29 distinct author identities
+# for what is a handful of people and a few pieces of automation. Anyone doing
+# diligence runs `git shortlog -sne`, sees a scatter of names, and concludes a
+# one-person shop with bot noise. That reading is wrong and it is expensive.
+#
+# A .mailmap fixes it at the reading end. Git applies it to shortlog, log and
+# blame, and GitHub honours it in the contributor view. No commit is altered,
+# no history is rewritten, nothing needs force-pushing. Drop this in at a repo
+# root as `.mailmap` and the same commits read correctly from then on.
+#
+# Format: Proper Name <proper@email> <commit@email>
+# Mapping by commit email alone collapses every display-name spelling that
+# address has ever used, which is the whole problem here.
+
+# --- People -----------------------------------------------------------------
+
+# 1402 commits under four spellings: Shayne Heffernan, JackKXCO, KXCO,
+# and "Shayne (via Claude)".
+Shayne Heffernan <shayne@knightsbridgelaw.com> <shayne@knightsbridgelaw.com>
+
+# 1 commit, an outside contributor. Named so it does not read as staff.
+Keral Patel <keralpatel@gmail.com> <keralpatel@gmail.com>
+
+# --- Automation, so it stops being counted as headcount ---------------------
+
+KXCO Automation <ops@kxco.ai> <ops@kxco.ai>
+KXCO Automation <ops@kxco.ai> <deploy@kxco.ai>
+KXCO Automation <ops@kxco.ai> <builder@local>
+KXCO Automation <ops@kxco.ai> <claude-droplet@livetradingnews.com>
+
+# --- UNRESOLVED, deliberately left out ---------------------------------------
+#
+# These are shared or ambiguous addresses and guessing at them would put the
+# wrong name against real work. Resolve each, then add a line here.
+#
+#   jack@kxco.io                               285 commits
+#     One is authored "John Heffernan", the rest "Knightsbridge", "KXCO" and
+#     "JackKXCO". If this address is John, one line assigns all 285 to him and
+#     it is the single largest correction available.
+#
+#   hello@kxco.ai                              281 commits
+#     Spelled "KXCO", "JackKXCO", "KXCO by Knightsbridge" and, 12 times,
+#     "Shayne Heffernan". Looks like a shared org address rather than a person.
+#
+#   126762857+JackKXCO@users.noreply.github.com  137 commits
+#     The GitHub noreply for the JackKXCO account. Whoever holds that account.
+#
+#   support@knightsbridgelaw.com                96 commits
+#     Spelled "Jack KXCO", "JackKXCO" and "One World Builder".
+#
+#   dev@kxco.io                                 25 commits
+#
+#   Issaree@knightsbridgelaw.com                 3 commits
+#     Authored under the display name "Shayne Heffernan", which is likely a
+#     machine with the wrong git config rather than either person.
+#
+# --- For the people starting now ---------------------------------------------
+#
+# Mike, Julie and Joe: set this once per machine, before the first commit.
+# Merged history does not get rewritten, so an identity set wrongly on day one
+# is wrong permanently, and this file can only paper over it afterwards.
+#
+#   git config --global user.name  "Full Name"
+#   git config --global user.email "name@knightsbridgelaw.com"
+#
+# Then add the matching line above, so the estate reads correctly from the
+# first commit rather than after someone notices.
