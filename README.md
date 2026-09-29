@@ -331,7 +331,7 @@ In wrapped and file modes, secret key material is held in memory only for a sing
 
 ## License
 
-Apache-2.0 © 2026 KXCO by Knightsbridge
+Apache-2.0 © 2026 Knightsbridge Financial Ltd, trading as KXCO. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
 
 ## Maintainers
 
