@@ -304,10 +304,10 @@ const audited = new AuditedHsm(hsm, auditLog)
 
 ## Release integrity
 
-Each release carries a SLSA provenance attestation tying the published tarball to
+Every release since 1.1.0 carries a SLSA provenance attestation tying the published tarball to
 the commit and workflow that built it: verify with `npm audit signatures`, or read
 it from `registry.npmjs.org/-/npm/v1/attestations/kxco-pq-hsm@<version>`. A CycloneDX
-SBOM is published as a GitHub Release asset at
+SBOM is published, from v1.1.1, as a GitHub Release asset at
 `releases/download/v<version>/sbom.cyclonedx.json`, a permanent unauthenticated
 URL. Sibling `kxco-*` packages sit on caret ranges so a correctness fix in the
 base package reaches you on the next install, with no release of every package
@@ -321,8 +321,8 @@ Evidenced, and reproducible on your own machine:
 
 - **1,793 NIST ACVP vectors passed, 0 failed** across FIPS 203, 204 and 205, pinned by digest, per [CONFORMANCE.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md). The other 310 are pairings the library refuses as weaker than the parameter set
 - **225 interoperability checks passed, 0 failed**, against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
-- **SLSA provenance** on every published release: verify with `npm audit signatures`
-- **CycloneDX SBOM** published with each release
+- **SLSA provenance** on every release since 1.1.0: verify with `npm audit signatures`
+- **CycloneDX SBOM** published with every release since 1.1.1
 - `npm run evidence` regenerates the whole bundle from source
 
 Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
