@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.3
+
+Documentation. No source change.
+
+**The npm page leads with what the package proves.** The first screen now leads with on-token custody, the proof behind
+`signingMode`, the tokens it runs on and the migration dates set by NIST,
+Executive Order 14412, OMB M-26-15 and the UK NCSC.
+
+A family table maps every KXCO package to the job it does, and a new For
+institutions section sets out the operated services and how to reach us. The
+evidence documents are unchanged and linked from the page.
+
 ## 1.4.2
 
 Documentation. No source change.

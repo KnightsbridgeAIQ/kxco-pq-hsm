@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.4.2",
-  "description": "ML-DSA-65 and ML-KEM-768 key custody on a PKCS#11 HSM. Generates ML-DSA keys on the token with CKA_EXTRACTABLE=false and signs with C_Sign, so the private key never enters host memory. signingMode reports on-token only after a probe signature proves it.",
+  "version": "1.4.3",
+  "description": "Post-quantum key custody on the HSM you already run. ML-DSA-65 keys generated on a PKCS#11 token with CKA_EXTRACTABLE=false and signed with C_Sign, so the private key never enters host memory. ML-KEM-768 and an Argon2id file store included.",
   "keywords": [
     "post-quantum",
     "pqc",
@@ -21,7 +21,16 @@
     "argon2",
     "key-storage",
     "zero-trust",
-    "key-protection"
+    "key-protection",
+    "quantum-safe",
+    "pqc-migration",
+    "key-custody",
+    "digital-signature",
+    "thales",
+    "utimaco",
+    "crypto-agility",
+    "pkcs-11",
+    "non-extractable"
   ],
   "license": "Apache-2.0",
   "author": "Shayne Heffernan and John Heffernan",
