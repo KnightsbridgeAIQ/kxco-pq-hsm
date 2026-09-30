@@ -19,7 +19,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fc from 'fast-check'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mlDsa, mlKem } from 'kxco-post-quantum'
@@ -43,7 +43,15 @@ const backendName = fc.constantFrom('memory', 'file')
 // Labels are made unique per case so one case never overwrites another's key.
 let n = 0
 const label = fc.stringMatching(/^[a-z][a-z0-9._-]{0,24}$/).map((s) => `${++n}-${s}`)
-const message = fc.uint8Array({ maxLength: 512 })
+const message = fc.uint8Array({ maxLength: 512, size: 'max' })
+// Any non-empty label (an empty one is refused), with the names every plain
+// object inherits drawn three times in four, so they are exercised on every
+// run rather than by chance.
+const PROTOTYPE_NAMES = ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']
+const anyLabel = fc.oneof(
+  { weight: 1, arbitrary: fc.string({ minLength: 1, maxLength: 40, size: 'max' }) },
+  { weight: 3, arbitrary: fc.constantFrom(...PROTOTYPE_NAMES) },
+)
 
 const hex = (b) => Buffer.from(b).toString('hex')
 const same = (a, b) => Buffer.from(a).equals(Buffer.from(b))
@@ -109,18 +117,44 @@ test('keys are typed: a signing key never decapsulates and a KEM key never signs
   }), RUNS)
 })
 
-test('MemoryBackend: any label never stored is refused with the package error, prototype names included', async () => {
-  const hsm = new PqHsm(new MemoryBackend())
-  const anyLabel = fc.oneof(
-    fc.string({ maxLength: 40 }),
-    fc.constantFrom('constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf'),
-  )
-  await fc.assert(fc.asyncProperty(anyLabel, message, async (l, msg) => {
+test('any label never stored is refused with the package error, in either backend, prototype names included', async () => {
+  // Fresh stores, so no generated label can name a key stored elsewhere in this file.
+  const fresh = {
+    memory: new PqHsm(new MemoryBackend()),
+    file: new PqHsm(new FileBackend({ path: join(dir, 'never-stored.json'), password: PASSWORD })),
+  }
+  await fc.assert(fc.asyncProperty(backendName, anyLabel, message, async (b, l, msg) => {
+    const hsm = fresh[b]
     return await refusedWithOwnError(() => hsm.sign(l, msg)) &&
       await refusedWithOwnError(() => hsm.decapsulate(l, msg)) &&
       await refusedWithOwnError(() => hsm.getPublicKey(l)) &&
       await refusedWithOwnError(() => hsm.deleteKey(l))
   }), { numRuns: 200 })
+})
+
+test('FileBackend: a key under any label, prototype names included, is listed, written to the file and signs after reopening', async () => {
+  // Argon2id at t=1, m=8 KiB, read from the store file, so each reopen costs
+  // milliseconds rather than the second and a half the real parameters take.
+  const cheapStore = (path) => writeFileSync(path, JSON.stringify({
+    'kxco-hsm': '1', kdf: { alg: 'argon2id', t: 1, m: 8, p: 1, salt: Buffer.alloc(32, 9).toString('base64url') }, keys: {},
+  }))
+  let run = 0
+  await fc.assert(fc.asyncProperty(anyLabel, message, async (l, msg) => {
+    const path = join(dir, `any-label-${++run}.json`)
+    cheapStore(path)
+    const { publicKey } = await new PqHsm(new FileBackend({ path, password: PASSWORD })).keygen(l, 'ml-dsa-65')
+    const onDisk = JSON.parse(readFileSync(path, 'utf8'))
+    const reopened = new PqHsm(new FileBackend({ path, password: PASSWORD }))
+    const listed = await reopened.listKeys()
+    const sig = await reopened.sign(l, msg)
+    return Object.keys(onDisk.keys).length === 1 && Object.hasOwn(onDisk.keys, l) &&
+      listed.length === 1 && listed[0].label === l && listed[0].alg === 'ml-dsa-65' &&
+      mlDsa.verify(publicKey, msg, hex(sig)) === true
+  }), {
+    numRuns: 30,
+    // Every built-in name is checked on every run, not only when drawn.
+    examples: PROTOTYPE_NAMES.map((l) => [l, new Uint8Array([1, 2, 3])]),
+  })
 })
 
 test('listKeys reports exactly the keys generated and not deleted, and a deleted key is refused', async () => {
@@ -182,15 +216,14 @@ test('FileBackend: a store reopened with the right password signs and decapsulat
   }), { numRuns: 10 })
 })
 
-test('FileBackend: a store opened with any other password is refused, for signing and for decapsulation', async () => {
+test('FileBackend: a store opened with any other password is refused with the package error, for signing and for decapsulation', async () => {
   const wrong = fc.string({ minLength: 1, maxLength: 40 }).filter((p) => p !== PASSWORD)
   await fc.assert(fc.asyncProperty(wrong, message, async (password, msg) => {
     const hsm = new PqHsm(new FileBackend({ path: storePath, password }))
     const { ciphertext } = mlKem.encapsulate(persisted.kem)
-    let refused = 0
-    try { await hsm.sign('persist-dsa', msg) } catch { refused++ }
-    try { await hsm.decapsulate('persist-kem', ciphertext) } catch { refused++ }
     // The public half is not secret, so it stays readable.
-    return refused === 2 && same(await hsm.getPublicKey('persist-dsa'), persisted.dsa)
+    return await refusedWithOwnError(() => hsm.sign('persist-dsa', msg)) &&
+      await refusedWithOwnError(() => hsm.decapsulate('persist-kem', ciphertext)) &&
+      same(await hsm.getPublicKey('persist-dsa'), persisted.dsa)
   }), { numRuns: 2 })
 })

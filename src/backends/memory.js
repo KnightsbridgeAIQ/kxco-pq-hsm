@@ -4,6 +4,9 @@ export class MemoryBackend {
   #keys = new Map()  // label → { alg, publicKey, secretKey }
 
   async store(label, alg, publicKey, secretKey) {
+    if (!(publicKey instanceof Uint8Array) || !(secretKey instanceof Uint8Array)) {
+      throw new KxcoPqHsmError('MemoryBackend: public and secret keys must be a Uint8Array or Buffer')
+    }
     this.#keys.set(label, {
       alg,
       publicKey: new Uint8Array(publicKey),
