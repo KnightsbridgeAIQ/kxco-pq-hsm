@@ -1,6 +1,15 @@
 import { mlDsa, mlKem } from 'kxco-post-quantum'
 import { KxcoPqHsmError } from './errors.js'
 
+// The same conversion as always, with a refusal reported as this package's.
+function bytes(value, what) {
+  try {
+    return new Uint8Array(value)
+  } catch {
+    throw new KxcoPqHsmError(`${what} must be a Uint8Array or Buffer`)
+  }
+}
+
 export class PqHsm {
   constructor(backend) {
     if (!backend) throw new KxcoPqHsmError('backend is required')
@@ -50,11 +59,12 @@ export class PqHsm {
   }
 
   async sign(label, message) {
+    const msg = bytes(message, 'message')
     // Prefer the token. Where the backend can sign inside the hardware, the
     // private key never enters host memory at all, and there is nothing here
     // to zero afterwards because nothing was ever unwrapped.
     if (this._backend.signingMode === 'on-token' && typeof this._backend.signOnToken === 'function') {
-      return Buffer.from(await this._backend.signOnToken(label, new Uint8Array(message)))
+      return Buffer.from(await this._backend.signOnToken(label, msg))
     }
 
     const { alg, secretKey } = await this._backend.loadSecret(label)
@@ -62,7 +72,9 @@ export class PqHsm {
       throw new KxcoPqHsmError(`key '${label}' is ${alg} — sign requires ml-dsa-65`)
     }
     try {
-      return Buffer.from(mlDsa.sign(secretKey, new Uint8Array(message)), 'hex')
+      return Buffer.from(mlDsa.sign(secretKey, msg), 'hex')
+    } catch (e) {
+      throw new KxcoPqHsmError(`cannot sign with '${label}': ${e.message}`)
     } finally {
       // The key was in host memory for the duration of this call. Zeroing it
       // bounds the window; it does not remove it.
@@ -71,14 +83,20 @@ export class PqHsm {
   }
 
   async decapsulate(label, ciphertext) {
+    const ct = bytes(ciphertext, 'ciphertext')
     const { alg, secretKey } = await this._backend.loadSecret(label)
     if (alg !== 'ml-kem-768') {
       throw new KxcoPqHsmError(`key '${label}' is ${alg} — decapsulate requires ml-kem-768`)
     }
     try {
       return new Uint8Array(
-        mlKem.decapsulate(new Uint8Array(ciphertext), new Uint8Array(secretKey))
+        mlKem.decapsulate(ct, new Uint8Array(secretKey))
       )
+    } catch (e) {
+      // A ciphertext of the wrong length, or a stored secret that is not an
+      // ML-KEM-768 key. A well-formed but wrong ciphertext does not throw: it
+      // gives an unrelated secret, as FIPS 203 implicit rejection specifies.
+      throw new KxcoPqHsmError(`cannot decapsulate with '${label}': ${e.message}`)
     } finally {
       secretKey.fill(0)
     }
