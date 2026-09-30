@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.6
+
+PqHsm signs a text message as its UTF-8 bytes and a typed array or DataView as
+the bytes it covers. Any other message or ciphertext is refused, and a label
+must be a non-empty string.
+
+FileBackend requires a password that is a non-empty string or bytes, keeps
+labels as own keys so a label such as `constructor` is an ordinary key, keeps
+memory in step with the store when a write fails, and reports a wrong password,
+a damaged or unreadable store and malformed input as KxcoPqHsmError.
+Pkcs11Backend reports a failed PKCS#11 call as KxcoPqHsmError. The store format
+is unchanged.
+
 ## 1.4.5
 
 Documentation. No source change.
