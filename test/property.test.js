@@ -44,11 +44,12 @@ const backendName = fc.constantFrom('memory', 'file')
 let n = 0
 const label = fc.stringMatching(/^[a-z][a-z0-9._-]{0,24}$/).map((s) => `${++n}-${s}`)
 const message = fc.uint8Array({ maxLength: 512, size: 'max' })
-// Any label at all, with the names every plain object inherits drawn three
-// times in four, so they are exercised on every run rather than by chance.
+// Any non-empty label (an empty one is refused), with the names every plain
+// object inherits drawn three times in four, so they are exercised on every
+// run rather than by chance.
 const PROTOTYPE_NAMES = ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']
 const anyLabel = fc.oneof(
-  { weight: 1, arbitrary: fc.string({ maxLength: 40, size: 'max' }) },
+  { weight: 1, arbitrary: fc.string({ minLength: 1, maxLength: 40, size: 'max' }) },
   { weight: 3, arbitrary: fc.constantFrom(...PROTOTYPE_NAMES) },
 )
 
