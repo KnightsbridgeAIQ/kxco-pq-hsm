@@ -14,6 +14,19 @@ async function loadMod() {
   }
 }
 
+// pkcs11js reports a failed call (a library that will not load, C_Initialize,
+// C_Login with the wrong PIN, C_Encrypt, C_Decrypt, C_Sign, C_GenerateKeyPair)
+// as its own Error. Each public method surfaces it as this package's, keeping
+// the PKCS#11 message.
+async function asOwnError(what, fn) {
+  try {
+    return await fn()
+  } catch (e) {
+    if (e instanceof KxcoPqHsmError) throw e
+    throw new KxcoPqHsmError(`Pkcs11Backend ${what}: ${e?.message ?? String(e)}`)
+  }
+}
+
 const b64u   = (b) => Buffer.from(b).toString('base64url')
 const unb64u = (s) => Buffer.from(s, 'base64url')
 
@@ -117,6 +130,10 @@ export class Pkcs11Backend {
 
   /** Connect to the HSM, login, and locate or create the AES wrapping key. */
   async open() {
+    return asOwnError('open', () => this.#open())
+  }
+
+  async #open() {
     const mod = await loadMod()
     const { PKCS11,
       CKF_SERIAL_SESSION, CKF_RW_SESSION, CKU_USER,
@@ -314,6 +331,10 @@ export class Pkcs11Backend {
    * reports on-token custody and fails at first use.
    */
   async keygenOnToken(label, alg = 'ml-dsa-65') {
+    return asOwnError('keygenOnToken', () => this.#keygenOnToken(label, alg))
+  }
+
+  async #keygenOnToken(label, alg) {
     this.#assertOpen()
     if (alg !== 'ml-dsa-65') {
       throw new KxcoPqHsmError(`on-token generation supports ml-dsa-65, not '${alg}'`)
@@ -401,6 +422,13 @@ export class Pkcs11Backend {
   }
 
   async store(label, alg, publicKey, secretKey) {
+    if (!(publicKey instanceof Uint8Array) || !(secretKey instanceof Uint8Array)) {
+      throw new KxcoPqHsmError('Pkcs11Backend: public and secret keys must be a Uint8Array or Buffer')
+    }
+    return asOwnError('store', () => this.#storeWrapped(label, alg, publicKey, secretKey))
+  }
+
+  async #storeWrapped(label, alg, publicKey, secretKey) {
     this.#assertOpen()
     const mod  = await loadMod()
     const iv   = this.#p11.C_GenerateRandom(this.#session, Buffer.alloc(16))
@@ -427,6 +455,10 @@ export class Pkcs11Backend {
    * @returns {Promise<Uint8Array>} the raw signature
    */
   async signOnToken(label, message) {
+    return asOwnError('signOnToken', () => this.#signOnToken(label, message))
+  }
+
+  async #signOnToken(label, message) {
     this.#assertOpen()
     if (!this.#tokenSigning) {
       throw new KxcoPqHsmError(
@@ -451,6 +483,10 @@ export class Pkcs11Backend {
   }
 
   async loadSecret(label) {
+    return asOwnError('loadSecret', () => this.#loadSecret(label))
+  }
+
+  async #loadSecret(label) {
     this.#assertOpen()
     const mod   = await loadMod()
     const entry = this.#store.get(label)

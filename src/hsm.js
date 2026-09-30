@@ -1,12 +1,24 @@
 import { mlDsa, mlKem } from 'kxco-post-quantum'
 import { KxcoPqHsmError } from './errors.js'
 
-// The same conversion as always, with a refusal reported as this package's.
-function bytes(value, what) {
-  try {
-    return new Uint8Array(value)
-  } catch {
-    throw new KxcoPqHsmError(`${what} must be a Uint8Array or Buffer`)
+// Bytes are taken as they are, a typed array or DataView as the bytes it
+// covers, and text (for a message) as its UTF-8. Anything else is refused:
+// `new Uint8Array('hello')` is empty and `new Uint8Array(12)` is twelve zero
+// bytes, so converting it would sign something other than what was passed.
+function bytes(value, what, { text = false } = {}) {
+  if (value instanceof Uint8Array) return new Uint8Array(value)
+  if (value instanceof ArrayBuffer) return new Uint8Array(value.slice(0))
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength))
+  }
+  if (text && typeof value === 'string') return new TextEncoder().encode(value)
+  throw new KxcoPqHsmError(`${what} must be ${text ? 'text, ' : ''}a Uint8Array or Buffer`)
+}
+
+// A label is the name a key is stored and found under, so it must be text.
+function checkLabel(label) {
+  if (typeof label !== 'string' || label === '') {
+    throw new KxcoPqHsmError('label must be a non-empty string')
   }
 }
 
@@ -29,6 +41,7 @@ export class PqHsm {
    * still report 'on-token'. That is the defect this release closes.
    */
   async keygen(label, alg = 'ml-dsa-65') {
+    checkLabel(label)
     if (alg !== 'ml-dsa-65' && alg !== 'ml-kem-768') {
       throw new KxcoPqHsmError(`unsupported algorithm '${alg}' — use 'ml-dsa-65' or 'ml-kem-768'`)
     }
@@ -59,7 +72,8 @@ export class PqHsm {
   }
 
   async sign(label, message) {
-    const msg = bytes(message, 'message')
+    checkLabel(label)
+    const msg = bytes(message, 'message', { text: true })
     // Prefer the token. Where the backend can sign inside the hardware, the
     // private key never enters host memory at all, and there is nothing here
     // to zero afterwards because nothing was ever unwrapped.
@@ -83,6 +97,7 @@ export class PqHsm {
   }
 
   async decapsulate(label, ciphertext) {
+    checkLabel(label)
     const ct = bytes(ciphertext, 'ciphertext')
     const { alg, secretKey } = await this._backend.loadSecret(label)
     if (alg !== 'ml-kem-768') {
@@ -103,6 +118,7 @@ export class PqHsm {
   }
 
   async getPublicKey(label) {
+    checkLabel(label)
     return (await this._backend.getPublicKey(label)).publicKey
   }
 
@@ -111,6 +127,7 @@ export class PqHsm {
   }
 
   async deleteKey(label) {
+    checkLabel(label)
     return this._backend.deleteKey(label)
   }
 }

@@ -12,6 +12,7 @@ const b64u = (b) => Buffer.from(b).toString('base64url')
 const unb64u = (s) => new Uint8Array(Buffer.from(s, 'base64url'))
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+const isBytes = (v) => v instanceof Uint8Array
 // A value read from the store file, named in a message without the chance of
 // the naming itself throwing.
 const named = (v) => (typeof v === 'string' ? v : JSON.stringify(v))
@@ -24,14 +25,19 @@ export class FileBackend {
 
   constructor({ path, password }) {
     if (!path)     throw new KxcoPqHsmError('FileBackend: path is required')
+    // A number would become that many zero bytes, which anyone can reproduce,
+    // so it is refused by name rather than converted.
+    if (typeof password === 'number') {
+      throw new KxcoPqHsmError('FileBackend: password must be a string or a Uint8Array; a number is not accepted')
+    }
     if (!password) throw new KxcoPqHsmError('FileBackend: password is required')
     this.#path     = path
-    try {
-      this.#password = typeof password === 'string'
-        ? new TextEncoder().encode(password)
-        : new Uint8Array(password)
-    } catch {
-      throw new KxcoPqHsmError('FileBackend: password must be a string or a Uint8Array')
+    if (typeof password === 'string') {
+      this.#password = new TextEncoder().encode(password)
+    } else if (isBytes(password) && password.length > 0) {
+      this.#password = new Uint8Array(password)
+    } else {
+      throw new KxcoPqHsmError('FileBackend: password must be a non-empty string or Uint8Array')
     }
     this.#store = this.#load()
   }
@@ -97,15 +103,26 @@ export class FileBackend {
   }
 
   async store(label, alg, publicKey, secretKey) {
+    if (!isBytes(publicKey) || !isBytes(secretKey)) {
+      throw new KxcoPqHsmError('FileBackend: public and secret keys must be a Uint8Array or Buffer')
+    }
     const nonce = randomBytes(12)
     const ct    = gcm(this.#key(), nonce).encrypt(new Uint8Array(secretKey))
+    const earlier = Object.hasOwn(this.#store.keys, label) ? this.#store.keys[label] : undefined
     this.#store.keys[label] = {
       alg,
       publicKey:  b64u(publicKey),
       nonce:      b64u(nonce),
       ciphertext: b64u(ct),
     }
-    this.#save()
+    try {
+      this.#save()
+    } catch (e) {
+      // What is in memory stays what is on disk.
+      if (earlier === undefined) delete this.#store.keys[label]
+      else this.#store.keys[label] = earlier
+      throw e
+    }
   }
 
   async loadSecret(label) {

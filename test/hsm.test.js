@@ -246,3 +246,70 @@ test('PqHsm: a ciphertext of the wrong length, a stored secret of the wrong leng
     await rejectsWithOwnError(() => hsm.decapsulate('short-kem', new Uint8Array(1088)), `${name} short KEM secret`)
   }
 })
+
+test('PqHsm: a text message is signed as its UTF-8 bytes, and a value that is not text or bytes is refused', async () => {
+  for (const backend of [new MemoryBackend(), new FileBackend({ path: cheapStorePath(), password: 'pw' })]) {
+    const hsm = new PqHsm(backend)
+    const name = backend.constructor.name
+    const { publicKey } = await hsm.keygen('dsa', 'ml-dsa-65')
+    const sig = await hsm.sign('dsa', 'payload é')
+    assert.ok(mlDsa.verify(publicKey, new TextEncoder().encode('payload é'), Buffer.from(sig).toString('hex')), name)
+    assert.ok(!mlDsa.verify(publicKey, new Uint8Array(0), Buffer.from(sig).toString('hex')), `${name}: not the empty message`)
+    const view = new Uint16Array([0x0100, 0x0001])
+    const viewSig = await hsm.sign('dsa', view)
+    assert.ok(mlDsa.verify(publicKey, new Uint8Array(view.buffer), Buffer.from(viewSig).toString('hex')), `${name}: a typed array is signed as the bytes it covers`)
+    for (const bad of [12, true, null, undefined, { a: 1 }, [1, 2, 3]]) {
+      await rejectsWithOwnError(() => hsm.sign('dsa', bad), `${name} message ${JSON.stringify(bad)}`)
+    }
+    await rejectsWithOwnError(() => hsm.decapsulate('dsa', 'text'), `${name} ciphertext as text`)
+  }
+})
+
+test('FileBackend: a password must be text or bytes that are not empty, and a number is refused by name', () => {
+  for (const bad of [12345678, 0, true, { toString: () => 'pw' }, new Uint8Array(0), Buffer.alloc(0), [1, 2, 3]]) {
+    assert.throws(() => new FileBackend({ path: cheapStorePath(), password: bad }), (err) => {
+      assert.ok(err instanceof KxcoPqHsmError, `${String(bad)}: ${err?.name}`)
+      if (typeof bad === 'number') assert.match(err.message, /number/)
+      return true
+    })
+  }
+  assert.ok(new FileBackend({ path: cheapStorePath(), password: 'pw' }))
+  assert.ok(new FileBackend({ path: cheapStorePath(), password: Buffer.from('pw') }))
+})
+
+test('PqHsm: a label must be text that is not empty, in every backend', async () => {
+  for (const backend of [new MemoryBackend(), new FileBackend({ path: cheapStorePath(), password: 'pw' })]) {
+    const hsm = new PqHsm(backend)
+    const name = backend.constructor.name
+    for (const bad of ['', 5, Symbol('k'), null, undefined, { toString: () => 'k' }]) {
+      const shown = typeof bad === 'symbol' ? 'Symbol' : JSON.stringify(bad)
+      await rejectsWithOwnError(() => hsm.keygen(bad, 'ml-dsa-65'), `${name} keygen ${shown}`)
+      await rejectsWithOwnError(() => hsm.sign(bad, new Uint8Array(1)), `${name} sign ${shown}`)
+      await rejectsWithOwnError(() => hsm.getPublicKey(bad), `${name} getPublicKey ${shown}`)
+      await rejectsWithOwnError(() => hsm.deleteKey(bad), `${name} deleteKey ${shown}`)
+    }
+    assert.deepEqual(await hsm.listKeys(), [], name)
+  }
+})
+
+test('FileBackend: a key whose store write fails is not kept in memory, and an earlier key under that label survives', async () => {
+  const path = cheapStorePath()
+  const backend = new FileBackend({ path, password: 'pw' })
+  const hsm = new PqHsm(backend)
+  const { publicKey: first } = await hsm.keygen('k', 'ml-dsa-65')
+  rmSync(path)
+  mkdirSync(path)
+  await rejectsWithOwnError(() => hsm.keygen('k', 'ml-dsa-65'), 'second keygen')
+  await rejectsWithOwnError(() => hsm.keygen('other', 'ml-dsa-65'), 'new label')
+  assert.deepEqual((await hsm.listKeys()).map((k) => k.label), ['k'])
+  assert.deepEqual(Buffer.from(await hsm.getPublicKey('k')), Buffer.from(first))
+})
+
+test('backends refuse a public or secret key that is not bytes', async () => {
+  for (const backend of [new MemoryBackend(), new FileBackend({ path: cheapStorePath(), password: 'pw' })]) {
+    const name = backend.constructor.name
+    await rejectsWithOwnError(() => backend.store('k', 'ml-dsa-65', 'not bytes', new Uint8Array(32)), `${name} public key as text`)
+    await rejectsWithOwnError(() => backend.store('k', 'ml-dsa-65', new Uint8Array(1952), 42), `${name} secret key as a number`)
+    assert.deepEqual(await backend.listKeys(), [], name)
+  }
+})
