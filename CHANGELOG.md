@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 1.5.0
 ML-DSA strength is chosen per key. `keygen` takes `'ml-dsa-87'` beside
 `'ml-dsa-65'`, the default, in every backend. A key signs under the set it was
 generated with, and a key whose stored secret or public key is the size of the
