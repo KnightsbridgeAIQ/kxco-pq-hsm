@@ -1,6 +1,10 @@
 /// <reference types="node" />
 
-export type HsmAlgorithm = 'ml-dsa-65' | 'ml-kem-768'
+/**
+ * A key's algorithm, fixed when it is generated. The ML-DSA parameter set is
+ * chosen per key: 'ml-dsa-65' (the default) or 'ml-dsa-87'.
+ */
+export type HsmAlgorithm = 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768'
 
 export interface KeyInfo {
   label: string
@@ -12,16 +16,26 @@ export interface KeyInfo {
 export declare class PqHsm {
   constructor(backend: MemoryBackend | FileBackend | Pkcs11Backend)
 
-  /** Generate and store a keypair. Returns the public key only. */
+  /**
+   * Generate and store a keypair. Returns the public key only. The default
+   * algorithm is 'ml-dsa-65'; pass 'ml-dsa-87' for an ML-DSA-87 key.
+   */
   keygen(label: string, alg?: HsmAlgorithm): Promise<{ publicKey: Uint8Array }>
 
-  /** Sign `message` with the ML-DSA-65 key at `label`. */
+  /**
+   * Sign `message` with the ML-DSA key at `label`, under the parameter set the
+   * key was generated with. A key whose stored bytes are the size of the other
+   * set is refused.
+   */
   sign(label: string, message: Uint8Array | Buffer): Promise<Uint8Array>
 
   /** Decapsulate a KEM ciphertext with the ML-KEM-768 key at `label`. */
   decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
 
-  /** Return the public key for `label`. */
+  /**
+   * Return the public key for `label`. An ML-DSA public key whose size is not
+   * that of its stored parameter set is refused.
+   */
   getPublicKey(label: string): Promise<Uint8Array>
 
   /** List all stored key labels and algorithms. */
@@ -63,6 +77,15 @@ export interface Pkcs11BackendOptions {
   pin:           string
   /** Label for the AES-256 wrapping key. Default `"kxco-pq-wrap"`. */
   wrapKeyLabel?: string
+  /**
+   * The token's ML-DSA signing mechanism. Supplying it enables on-token
+   * generation and signing, and `open()` refuses to start if the token does
+   * not advertise it. Each key's parameter set is chosen by the algorithm
+   * passed to `keygen` and written to CKA_PARAMETER_SET.
+   */
+  mlDsaMechanism?: number
+  /** The token's ML-DSA key-pair generation mechanism. Default `0x1c`. */
+  mlDsaKeyPairGenMechanism?: number
 }
 
 /**
