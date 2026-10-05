@@ -214,14 +214,14 @@ Accepts any backend instance as its only argument.
 ### Methods
 
 ```ts
-hsm.keygen(label: string, alg?: 'ml-dsa-65' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
+hsm.keygen(label: string, alg?: 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
 ```
-Generate and store a keypair. Returns the public key only. Default algorithm is `'ml-dsa-65'`.
+Generate and store a keypair. Returns the public key only. Default algorithm is `'ml-dsa-65'`. The ML-DSA strength is chosen per key: pass `'ml-dsa-87'` for an ML-DSA-87 key (2592-byte public key, 4627-byte signatures). On a token that generates on the token, the parameter set is written to `CKA_PARAMETER_SET` (`CKP_ML_DSA_65` = 0x2, `CKP_ML_DSA_87` = 0x3), and the public key the token returns is checked against the set asked for.
 
 ```ts
 hsm.sign(label: string, message: Uint8Array | Buffer): Promise<Uint8Array>
 ```
-Sign `message` with the ML-DSA-65 key stored at `label`. Returns the signature.
+Sign `message` with the ML-DSA key stored at `label`, under the parameter set the key was generated with. Returns the signature: 3309 bytes for ML-DSA-65, 4627 for ML-DSA-87. A key whose stored bytes are the size of the other set is refused rather than used.
 
 ```ts
 hsm.decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
@@ -231,12 +231,12 @@ Decapsulate a KEM ciphertext with the ML-KEM-768 key at `label`. Returns the sha
 ```ts
 hsm.getPublicKey(label: string): Promise<Uint8Array>
 ```
-Return the public key for `label` without performing any signing operation.
+Return the public key for `label` without performing any signing operation. An ML-DSA public key whose size is not that of its stored set is refused.
 
 ```ts
-hsm.listKeys(): Promise<Array<{ label: string, alg: 'ml-dsa-65' | 'ml-kem-768' }>>
+hsm.listKeys(): Promise<Array<{ label: string, alg: 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768' }>>
 ```
-List all stored key labels and their algorithms.
+List all stored key labels and their algorithms. For a key found on a PKCS#11 token, the algorithm is read back from the token's `CKA_PARAMETER_SET`. A key whose value is not ML-DSA-65 or ML-DSA-87 (ML-DSA-44 included), or cannot be read, is not loaded, and using its label is refused with the reason.
 
 ```ts
 hsm.deleteKey(label: string): Promise<void>
@@ -258,9 +258,15 @@ new Pkcs11Backend(options: {
   slot?:         number   // Slot index, default 0
   pin:           string   // HSM user PIN
   wrapKeyLabel?: string   // Label for the AES-256 wrapping key, default "kxco-pq-wrap"
+  mlDsaMechanism?:           number  // The token's ML-DSA mechanism; enables on-token keys
+  mlDsaKeyPairGenMechanism?: number  // Default 0x1c (CKM_ML_DSA_KEY_PAIR_GEN)
 })
 // Call .open() before passing to PqHsm; call .close() when done.
 ```
+
+The parameter set is a property of each key, not of the backend. The
+undocumented `parameterSet` option of 1.4.x is refused for any value other than
+the old ML-DSA-65 default; pass the algorithm to `keygen` instead.
 
 ### Error class
 

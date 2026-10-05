@@ -12,8 +12,8 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { PqHsm, MemoryBackend } from '../src/index.js'
-import { mlDsa } from 'kxco-post-quantum'
+import { PqHsm, MemoryBackend, KxcoPqHsmError } from '../src/index.js'
+import { mlDsa, mlDsa87 } from 'kxco-post-quantum'
 
 /** A backend that signs inside the "token" and never yields a private key. */
 class TokenBackend {
@@ -64,4 +64,59 @@ test('a software backend still signs in process', async () => {
   const sig = await hsm.sign('soft', Buffer.from('x'))
   assert.equal(mlDsa.verify(publicKey, 'x', sig.toString('hex')), true)
   assert.equal(hsm.signingMode, 'in-process')
+})
+
+/**
+ * A backend that generates on the "token" at whatever set it is asked for,
+ * and records what it was asked. `ignoreAlg` makes it always generate
+ * ML-DSA-65, as a token that disregarded the parameter set would.
+ */
+class GeneratingTokenBackend {
+  #keys = new Map()
+  signingMode = 'on-token'
+  canGenerateOnToken = true
+  loadSecretCalls = 0
+  asked = []
+  constructor({ ignoreAlg = false } = {}) { this.ignoreAlg = ignoreAlg }
+
+  async keygenOnToken(label, alg) {
+    this.asked.push(alg)
+    const module = alg === 'ml-dsa-87' && !this.ignoreAlg ? mlDsa87 : mlDsa
+    const kp = (module === mlDsa87 ? mlDsa87.ml_dsa87 : mlDsa.ml_dsa65).keygen()
+    this.#keys.set(label, { alg, module, publicKey: kp.publicKey, secretKey: kp.secretKey })
+    return { publicKey: kp.publicKey }
+  }
+  async getPublicKey(label) {
+    const k = this.#keys.get(label)
+    return { alg: k.alg, publicKey: k.publicKey }
+  }
+  async signOnToken(label, message) {
+    const k = this.#keys.get(label)
+    return Buffer.from(k.module.sign(k.secretKey, message), 'hex')
+  }
+  async loadSecret() {
+    this.loadSecretCalls++
+    throw new Error('the key is non-extractable: loadSecret must not be called')
+  }
+}
+
+test('an on-token backend is asked for the parameter set the key was requested at', async () => {
+  const backend = new GeneratingTokenBackend()
+  const hsm = new PqHsm(backend)
+  const { publicKey } = await hsm.keygen('inst-87', 'ml-dsa-87')
+  await hsm.keygen('inst-65')
+  assert.deepEqual(backend.asked, ['ml-dsa-87', 'ml-dsa-65'])
+  assert.equal(publicKey.length, 2592)
+  const sig = await hsm.sign('inst-87', Buffer.from('board resolution'))
+  assert.equal(mlDsa87.verify(publicKey, 'board resolution', sig.toString('hex')), true)
+  assert.equal(backend.loadSecretCalls, 0, 'the key must never be unwrapped')
+})
+
+test('a backend that generates the wrong parameter set is refused rather than believed', async () => {
+  const hsm = new PqHsm(new GeneratingTokenBackend({ ignoreAlg: true }))
+  await assert.rejects(() => hsm.keygen('inst', 'ml-dsa-87'), (err) => {
+    assert.ok(err instanceof KxcoPqHsmError, `${err?.name}: ${err?.message}`)
+    assert.match(err.message, /asked for an ml-dsa-87 key/)
+    return true
+  })
 })

@@ -169,3 +169,47 @@ test('deleting a key destroys the token objects, not just the local entry', { sk
   await assert.rejects(() => new PqHsm(backend).getPublicKey(l), /not found/i,
     'the private object is still on the token after delete')
 })
+
+test('an ML-DSA-87 key is generated on the token and signs as ML-DSA-87', { skip }, async () => {
+  const hsm = new PqHsm(backend)
+  const l = label()
+  const { publicKey } = await hsm.keygen(l, 'ml-dsa-87')
+
+  // ML-DSA-87 public keys are 2592 bytes, so the token honoured CKP_ML_DSA_87.
+  assert.equal(publicKey.length, 2592, 'not an ML-DSA-87 public key')
+  assert.ok((await hsm.listKeys()).some((k) => k.label === l && k.alg === 'ml-dsa-87'))
+
+  const msg = Buffer.from('category 5 settlement instruction')
+  const sig = await hsm.sign(l, msg)
+  const { mlDsa, mlDsa87 } = await import('kxco-post-quantum')
+  const sigHex = Buffer.from(sig).toString('hex')
+  assert.equal(sig.length, 4627, 'not an ML-DSA-87 signature')
+  assert.equal(mlDsa87.verify(publicKey, new Uint8Array(msg), sigHex), true,
+    'the token signature does not verify as ML-DSA-87 under the token public key')
+  assert.equal(mlDsa.verify(publicKey, new Uint8Array(msg), sigHex), false)
+  assert.equal(backend.signingMode, 'on-token')
+  await assert.rejects(() => backend.loadSecret(l))
+})
+
+test('after a restart each key is read back from the token at the parameter set it was generated with', { skip }, async () => {
+  const hsm = new PqHsm(backend)
+  const l65 = label()
+  const l87 = label()
+  const { publicKey: pk65 } = await hsm.keygen(l65, 'ml-dsa-65')
+  const { publicKey: pk87 } = await hsm.keygen(l87, 'ml-dsa-87')
+
+  backend.close()
+  backend = await openBackend()
+  const hsm2 = new PqHsm(backend)
+
+  // Through 1.4.x every key found on the token came back labelled ml-dsa-65.
+  const listed = new Map((await hsm2.listKeys()).map((k) => [k.label, k.alg]))
+  assert.equal(listed.get(l65), 'ml-dsa-65')
+  assert.equal(listed.get(l87), 'ml-dsa-87', 'the parameter set was not read back from CKA_PARAMETER_SET')
+
+  const msg = Buffer.from('after restart, both sets')
+  const { mlDsa, mlDsa87 } = await import('kxco-post-quantum')
+  assert.equal(mlDsa.verify(pk65, new Uint8Array(msg), Buffer.from(await hsm2.sign(l65, msg)).toString('hex')), true)
+  assert.equal(mlDsa87.verify(pk87, new Uint8Array(msg), Buffer.from(await hsm2.sign(l87, msg)).toString('hex')), true)
+  assert.deepEqual(Buffer.from(await hsm2.getPublicKey(l87)), Buffer.from(pk87))
+})

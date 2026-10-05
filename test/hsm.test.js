@@ -4,7 +4,7 @@ import { existsSync, unlinkSync, mkdtempSync, mkdirSync, rmSync, readFileSync, w
 import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mlDsa, mlKem } from 'kxco-post-quantum'
+import { mlDsa, mlDsa87, mlKem } from 'kxco-post-quantum'
 import { PqHsm, MemoryBackend, FileBackend, Pkcs11Backend, KxcoPqHsmError } from '../src/index.js'
 
 // Detect SoftHSM2 on CI or developer machines
@@ -36,6 +36,33 @@ function suite(name, makeHsm, teardown) {
       const message = new TextEncoder().encode('kxco-pq-hsm test message')
       const sig     = await hsm.sign('dsa-key', message)
       assert.ok(mlDsa.verify(pubKey, message, Buffer.from(sig).toString('hex')))
+    })
+
+    test('an ml-dsa-65 key still signs ML-DSA-65: 3309 bytes, and not an ML-DSA-87 signature', async () => {
+      const pubKey  = await hsm.getPublicKey('dsa-key')
+      const message = new TextEncoder().encode('kxco-pq-hsm stays ML-DSA-65')
+      const sig     = Buffer.from(await hsm.sign('dsa-key', message)).toString('hex')
+      assert.equal(sig.length, 3309 * 2)
+      assert.equal(mlDsa.verify(pubKey, message, sig), true)
+      assert.equal(mlDsa87.verify(pubKey, message, sig), false)
+    })
+
+    test('keygen ml-dsa-87 returns a 2592-byte public key and lists as ml-dsa-87', async () => {
+      const { publicKey } = await hsm.keygen('dsa87-key', 'ml-dsa-87')
+      assert.ok(publicKey instanceof Uint8Array)
+      assert.equal(publicKey.length, 2592)
+      assert.deepEqual(Buffer.from(await hsm.getPublicKey('dsa87-key')), Buffer.from(publicKey))
+      assert.ok((await hsm.listKeys()).some(k => k.label === 'dsa87-key' && k.alg === 'ml-dsa-87'))
+    })
+
+    test('an ml-dsa-87 key signs ML-DSA-87: 4627 bytes, verified by ML-DSA-87 and not by ML-DSA-65', async () => {
+      const pubKey  = await hsm.getPublicKey('dsa87-key')
+      const message = new TextEncoder().encode('kxco-pq-hsm ML-DSA-87')
+      const sig     = Buffer.from(await hsm.sign('dsa87-key', message)).toString('hex')
+      assert.equal(sig.length, 4627 * 2)
+      assert.equal(mlDsa87.verify(pubKey, message, sig), true)
+      assert.equal(mlDsa.verify(pubKey, message, sig), false)
+      assert.equal(mlDsa87.verify(pubKey, new TextEncoder().encode('another message'), sig), false)
     })
 
     test('keygen ml-kem-768 returns publicKey', async () => {
@@ -303,6 +330,35 @@ test('FileBackend: a key whose store write fails is not kept in memory, and an e
   await rejectsWithOwnError(() => hsm.keygen('other', 'ml-dsa-65'), 'new label')
   assert.deepEqual((await hsm.listKeys()).map((k) => k.label), ['k'])
   assert.deepEqual(Buffer.from(await hsm.getPublicKey('k')), Buffer.from(first))
+})
+
+test('PqHsm: a key stored as one ML-DSA parameter set with the bytes of the other is refused, for signing and for its public key', async () => {
+  const k65 = mlDsa.ml_dsa65.keygen()
+  const k87 = mlDsa87.ml_dsa87.keygen()
+  for (const backend of [new MemoryBackend(), new FileBackend({ path: cheapStorePath(), password: 'pw' })]) {
+    const hsm = new PqHsm(backend)
+    const name = backend.constructor.name
+    await backend.store('65-stored-as-87', 'ml-dsa-87', k65.publicKey, k65.secretKey)
+    await backend.store('87-stored-as-65', 'ml-dsa-65', k87.publicKey, k87.secretKey)
+    for (const label of ['65-stored-as-87', '87-stored-as-65']) {
+      const calls = [['sign', () => hsm.sign(label, new Uint8Array([1]))], ['getPublicKey', () => hsm.getPublicKey(label)]]
+      for (const [what, fn] of calls) {
+        await assert.rejects(fn, (err) => {
+          assert.ok(err instanceof KxcoPqHsmError, `${name} ${label} ${what}: ${err?.name}: ${err?.message}`)
+          assert.match(err.message, /not (used|presented) as another/, `${name} ${label} ${what}`)
+          return true
+        })
+      }
+    }
+  }
+})
+
+test('PqHsm: an algorithm that is not ml-dsa-65, ml-dsa-87 or ml-kem-768 is refused at keygen', async () => {
+  const hsm = new PqHsm(new MemoryBackend())
+  for (const bad of ['ml-dsa-44', 'ML-DSA-87', 'ml-kem-1024', '', 'constructor']) {
+    await rejectsWithOwnError(() => hsm.keygen('k', bad), `alg ${JSON.stringify(bad)}`)
+  }
+  assert.deepEqual(await hsm.listKeys(), [])
 })
 
 test('backends refuse a public or secret key that is not bytes', async () => {

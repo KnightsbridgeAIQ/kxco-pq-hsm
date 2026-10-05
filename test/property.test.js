@@ -22,7 +22,7 @@ import fc from 'fast-check'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mlDsa, mlKem } from 'kxco-post-quantum'
+import { mlDsa, mlDsa87, mlKem } from 'kxco-post-quantum'
 import { PqHsm, MemoryBackend, FileBackend, KxcoPqHsmError } from '../src/index.js'
 
 const RUNS = { numRuns: 20 }
@@ -86,6 +86,21 @@ test('ML-DSA-65: any message signed through PqHsm verifies with kxco-post-quantu
       same(await hsm.getPublicKey(l), publicKey) &&
       mlDsa.verify(publicKey, msg, hex(sig)) === true &&
       mlDsa.verify(publicKey, changed, hex(sig)) === false
+  }), RUNS)
+})
+
+test('ML-DSA-87: any message signed through PqHsm verifies as ML-DSA-87 with kxco-post-quantum, never as ML-DSA-65, and a changed message does not', async () => {
+  await fc.assert(fc.asyncProperty(backendName, label, fc.uint8Array({ minLength: 1, maxLength: 512 }), fc.nat(), async (b, l, msg, at) => {
+    const hsm = backends[b]
+    const { publicKey } = await hsm.keygen(l, 'ml-dsa-87')
+    const sig = await hsm.sign(l, msg)
+    const changed = Uint8Array.from(msg)
+    changed[at % changed.length] ^= 0x01
+    return publicKey.length === 2592 && sig.length === 4627 &&
+      same(await hsm.getPublicKey(l), publicKey) &&
+      mlDsa87.verify(publicKey, msg, hex(sig)) === true &&
+      mlDsa.verify(publicKey, msg, hex(sig)) === false &&
+      mlDsa87.verify(publicKey, changed, hex(sig)) === false
   }), RUNS)
 })
 
@@ -161,7 +176,7 @@ test('listKeys reports exactly the keys generated and not deleted, and a deleted
   const op = fc.record({
     kind: fc.constantFrom('keygen', 'keygen', 'delete'),
     slot: fc.integer({ min: 0, max: 1 }),
-    alg: fc.constantFrom('ml-dsa-65', 'ml-kem-768'),
+    alg: fc.constantFrom('ml-dsa-65', 'ml-dsa-87', 'ml-kem-768'),
   })
   let run = 0
   await fc.assert(fc.asyncProperty(backendName, fc.array(op, { minLength: 2, maxLength: 8 }), async (b, ops) => {

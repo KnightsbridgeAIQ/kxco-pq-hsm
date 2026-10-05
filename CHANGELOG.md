@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.0
+ML-DSA strength is chosen per key. `keygen` takes `'ml-dsa-87'` beside
+`'ml-dsa-65'`, the default, in every backend. A key signs under the set it was
+generated with, and a key whose stored secret or public key is the size of the
+other set is refused by `sign` and `getPublicKey` rather than used.
+
+Pkcs11Backend writes the key's set to `CKA_PARAMETER_SET` on the token
+(`CKP_ML_DSA_87` = 0x3 beside `CKP_ML_DSA_65` = 0x2, the PKCS#11 v3.2 values),
+and PqHsm checks that the public key a token returns is the size of the set it
+asked for. When a later process restores keys from the token, the parameter set
+is read back from `CKA_PARAMETER_SET`, on the private object and then the
+public one. Through 1.4.6 every key found on the token was labelled ml-dsa-65
+without reading it. A key whose value is unknown, ML-DSA-44 included, or
+cannot be read is not loaded, and using its label is refused with the reason.
+The backend-wide `parameterSet` option is refused for any value other than the
+old ML-DSA-65 default.
+
+The kxco-post-quantum floor is raised to 1.6.0. Keys and stores written by
+1.4.x, and every ML-DSA-65 signature they make, are unchanged.
+
 ## 1.4.6
 
 PqHsm signs a text message as its UTF-8 bytes and a typed array or DataView as

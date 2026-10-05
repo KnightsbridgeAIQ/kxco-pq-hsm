@@ -1,5 +1,25 @@
-import { mlDsa, mlKem } from 'kxco-post-quantum'
+import { mlDsa, mlDsa87, mlKem } from 'kxco-post-quantum'
 import { KxcoPqHsmError } from './errors.js'
+
+// The ML-DSA parameter sets a signing key may be. The set is chosen when the
+// key is generated, stored with it, and decides how it signs: a key is never
+// used as the other set, and one whose stored bytes are the size of the other
+// set is refused rather than tried.
+const ML_DSA = {
+  'ml-dsa-65': { sign: mlDsa.sign,   keygen: () => mlDsa.ml_dsa65.keygen(),   publicKey: 1952, secretKey: 4032 },
+  'ml-dsa-87': { sign: mlDsa87.sign, keygen: () => mlDsa87.ml_dsa87.keygen(), publicKey: 2592, secretKey: 4896 },
+}
+const ALGORITHMS = [...Object.keys(ML_DSA), 'ml-kem-768']
+
+const mlDsaSet = (alg) => (typeof alg === 'string' && Object.hasOwn(ML_DSA, alg) ? ML_DSA[alg] : null)
+
+// Names the set whose keys are `length` bytes, for a refusal message.
+function sizeOf(length, part) {
+  if (typeof length !== 'number') return 'no length'
+  const match = Object.keys(ML_DSA).find((alg) => ML_DSA[alg][part] === length)
+  const named = part === 'publicKey' ? 'public key' : 'secret key'
+  return match ? `${length} bytes, the size of an ${match} ${named}` : `${length} bytes`
+}
 
 // Bytes are taken as they are, a typed array or DataView as the bytes it
 // covers, and text (for a message) as its UTF-8. Anything else is refused:
@@ -39,22 +59,31 @@ export class PqHsm {
    *
    * Through 1.3.x there was only the second path, while `signingMode` could
    * still report 'on-token'. That is the defect this release closes.
+   *
+   * The strength is chosen per key: 'ml-dsa-65' (the default) or 'ml-dsa-87'.
    */
   async keygen(label, alg = 'ml-dsa-65') {
     checkLabel(label)
-    if (alg !== 'ml-dsa-65' && alg !== 'ml-kem-768') {
-      throw new KxcoPqHsmError(`unsupported algorithm '${alg}' — use 'ml-dsa-65' or 'ml-kem-768'`)
+    if (!ALGORITHMS.includes(alg)) {
+      throw new KxcoPqHsmError(`unsupported algorithm '${alg}': use 'ml-dsa-65', 'ml-dsa-87' or 'ml-kem-768'`)
     }
+    const dsa = mlDsaSet(alg)
 
-    if (alg === 'ml-dsa-65' &&
+    if (dsa &&
         this._backend.canGenerateOnToken &&
         typeof this._backend.keygenOnToken === 'function') {
-      return this._backend.keygenOnToken(label, alg)
+      const generated = await this._backend.keygenOnToken(label, alg)
+      // The token made the key, so check it made the set that was asked for.
+      if (generated?.publicKey?.length !== dsa.publicKey) {
+        throw new KxcoPqHsmError(
+          `the backend was asked for an ${alg} key for '${label}' and returned a public key of ` +
+          `${sizeOf(generated?.publicKey?.length, 'publicKey')}`,
+        )
+      }
+      return generated
     }
 
-    const kp = alg === 'ml-dsa-65'
-      ? mlDsa.ml_dsa65.keygen()
-      : mlKem.ml_kem768.keygen()
+    const kp = dsa ? dsa.keygen() : mlKem.ml_kem768.keygen()
 
     await this._backend.store(label, alg, kp.publicKey, kp.secretKey)
     kp.secretKey.fill(0)
@@ -82,13 +111,25 @@ export class PqHsm {
     }
 
     const { alg, secretKey } = await this._backend.loadSecret(label)
-    if (alg !== 'ml-dsa-65') {
-      throw new KxcoPqHsmError(`key '${label}' is ${alg} — sign requires ml-dsa-65`)
-    }
     try {
-      return Buffer.from(mlDsa.sign(secretKey, msg), 'hex')
-    } catch (e) {
-      throw new KxcoPqHsmError(`cannot sign with '${label}': ${e.message}`)
+      // The stored set decides how the key signs.
+      const dsa = mlDsaSet(alg)
+      if (!dsa) {
+        throw new KxcoPqHsmError(`key '${label}' is ${alg}: sign requires ml-dsa-65 or ml-dsa-87`)
+      }
+      if (secretKey.length !== dsa.secretKey) {
+        throw new KxcoPqHsmError(
+          `key '${label}' is stored as ${alg} but its secret key is ${sizeOf(secretKey.length, 'secretKey')}, ` +
+          `not ${dsa.secretKey}: a key of one parameter set is not used as another`,
+        )
+      }
+      let sig
+      try {
+        sig = dsa.sign(secretKey, msg)
+      } catch (e) {
+        throw new KxcoPqHsmError(`cannot sign with '${label}': ${e.message}`)
+      }
+      return Buffer.from(sig, 'hex')
     } finally {
       // The key was in host memory for the duration of this call. Zeroing it
       // bounds the window; it does not remove it.
@@ -119,7 +160,15 @@ export class PqHsm {
 
   async getPublicKey(label) {
     checkLabel(label)
-    return (await this._backend.getPublicKey(label)).publicKey
+    const { alg, publicKey } = await this._backend.getPublicKey(label)
+    const dsa = mlDsaSet(alg)
+    if (dsa && publicKey?.length !== dsa.publicKey) {
+      throw new KxcoPqHsmError(
+        `key '${label}' is stored as ${alg} but its public key is ${sizeOf(publicKey?.length, 'publicKey')}, ` +
+        `not ${dsa.publicKey}: a key of one parameter set is not presented as another`,
+      )
+    }
+    return publicKey
   }
 
   async listKeys() {
