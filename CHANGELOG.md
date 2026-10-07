@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.0 (2026-10-07)
+
+ML-DSA-87 is the default. `keygen(label)` with no algorithm now generates an
+ML-DSA-87 key, with a 2592-byte public key and 4627-byte signatures, in every
+backend. On a token that generates the key itself, `CKA_PARAMETER_SET` is
+written as `CKP_ML_DSA_87` (0x3). `keygenOnToken` defaults to ML-DSA-87 in the
+same way.
+
+Passing `'ml-dsa-65'` keeps the old behaviour: `keygen(label, 'ml-dsa-65')`
+generates an ML-DSA-65 key exactly as before. A Pkcs11Backend constructed with
+the 1.4.x option `parameterSet: 0x2` asked for ML-DSA-65, so it keeps
+generating ML-DSA-65 when `keygen` is given no algorithm.
+
+Existing keys are unaffected. A key signs under the parameter set it was
+generated with, so every ML-DSA-65 key already in a memory, file or PKCS#11
+store, or on a token, signs and verifies as ML-DSA-65. The store format is
+unchanged.
+
 ## 1.5.1
 
 Documentation. No source change.

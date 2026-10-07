@@ -65,6 +65,17 @@ function suite(name, makeHsm, teardown) {
       assert.equal(mlDsa87.verify(pubKey, new TextEncoder().encode('another message'), sig), false)
     })
 
+    test('keygen with no algorithm makes an ML-DSA-87 key: 2592-byte public key, 4627-byte signatures', async () => {
+      const { publicKey } = await hsm.keygen('default-key')
+      assert.equal(publicKey.length, 2592)
+      assert.ok((await hsm.listKeys()).some(k => k.label === 'default-key' && k.alg === 'ml-dsa-87'))
+      const message = new TextEncoder().encode('kxco-pq-hsm default')
+      const sig     = Buffer.from(await hsm.sign('default-key', message)).toString('hex')
+      assert.equal(sig.length, 4627 * 2)
+      assert.equal(mlDsa87.verify(publicKey, message, sig), true)
+      assert.equal(mlDsa.verify(publicKey, message, sig), false)
+    })
+
     test('keygen ml-kem-768 returns publicKey', async () => {
       const { publicKey } = await hsm.keygen('kem-key', 'ml-kem-768')
       assert.ok(publicKey instanceof Uint8Array)
@@ -200,6 +211,28 @@ test('FileBackend: a store written by 1.4.2 keeps working, and takes keys under 
   await reopened.deleteKey('__proto__')
   assert.ok(!(await reopened.listKeys()).some((k) => k.label === '__proto__'))
   await rejectsWithOwnError(() => reopened.sign('__proto__', message), 'deleted __proto__')
+})
+
+test('an ML-DSA-65 key made before ML-DSA-87 became the default still signs and verifies as ML-DSA-65', async () => {
+  const message = new TextEncoder().encode('made before 1.6.0')
+  // A key written by 1.4.2, in the store it was written to.
+  const path = join(scratch, 'from-1.4.2-after-default.json')
+  copyFileSync(new URL('./fixtures/filebackend-1.4.2.json', import.meta.url), path)
+  const fromFile = new PqHsm(new FileBackend({ path, password: 'kxco-pq-hsm-fixture' }))
+  // A key a backend already holds, put there without keygen.
+  const k65 = mlDsa.ml_dsa65.keygen()
+  const memory = new MemoryBackend()
+  await memory.store('existing-65', 'ml-dsa-65', k65.publicKey, k65.secretKey)
+  const fromMemory = new PqHsm(memory)
+  for (const [hsm, label] of [[fromFile, 'fixture-dsa'], [fromMemory, 'existing-65']]) {
+    assert.ok((await hsm.listKeys()).some(k => k.label === label && k.alg === 'ml-dsa-65'), label)
+    const publicKey = await hsm.getPublicKey(label)
+    assert.equal(publicKey.length, 1952, label)
+    const sig = Buffer.from(await hsm.sign(label, message)).toString('hex')
+    assert.equal(sig.length, 3309 * 2, label)
+    assert.equal(mlDsa.verify(publicKey, message, sig), true, label)
+    assert.equal(mlDsa87.verify(publicKey, message, sig), false, label)
+  }
 })
 
 test('FileBackend: a key store that cannot be read, or is not a key store, is refused with KxcoPqHsmError', () => {

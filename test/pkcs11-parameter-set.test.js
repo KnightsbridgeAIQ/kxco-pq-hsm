@@ -122,7 +122,7 @@ test('keygen on the token writes the parameter set of the algorithm asked for, a
   const backend = await open(onToken)
   const hsm = new PqHsm(backend)
   const { publicKey: pk87 } = await hsm.keygen('made-87', 'ml-dsa-87')
-  const { publicKey: pk65 } = await hsm.keygen('made-65')
+  const { publicKey: pk65 } = await hsm.keygen('made-65', 'ml-dsa-65')
 
   const written = F.token().generated.map((g) => g.publicTemplate.find((a) => a.type === F.CKA_PARAMETER_SET)?.value)
   assert.deepEqual(written, [0x3, 0x2])
@@ -142,6 +142,64 @@ test('keygen on the token writes the parameter set of the algorithm asked for, a
   assert.equal(mlDsa87.verify(pk87, MESSAGE, hex(await hsm2.sign('made-87', MESSAGE))), true)
   assert.equal(mlDsa.verify(pk65, MESSAGE, hex(await hsm2.sign('made-65', MESSAGE))), true)
   again.close()
+})
+
+const writtenSets = () => F.token().generated.map((g) => g.publicTemplate.find((a) => a.type === F.CKA_PARAMETER_SET)?.value)
+
+test('keygen on the token with no algorithm writes ML-DSA-87 (0x3), and the key signs as ML-DSA-87', async () => {
+  F.resetToken()
+  const backend = await open(onToken)
+  assert.equal(backend.defaultAlgorithm, 'ml-dsa-87')
+  const hsm = new PqHsm(backend)
+  const { publicKey } = await hsm.keygen('made-default')
+  const { publicKey: direct } = await backend.keygenOnToken('made-direct')
+  assert.deepEqual(writtenSets(), [0x3, 0x3])
+  assert.equal(publicKey.length, 2592)
+  assert.equal(direct.length, 2592)
+  const sig = await hsm.sign('made-default', MESSAGE)
+  assert.equal(sig.length, 4627)
+  assert.equal(mlDsa87.verify(publicKey, MESSAGE, hex(sig)), true)
+  assert.equal(mlDsa.verify(publicKey, MESSAGE, hex(sig)), false)
+  assert.deepEqual(byLabel(await hsm.listKeys()), [
+    { label: 'made-default', alg: 'ml-dsa-87' },
+    { label: 'made-direct', alg: 'ml-dsa-87' },
+  ])
+  backend.close()
+
+  // The same when the key is wrapped rather than generated on the token.
+  F.resetToken({ mechanisms: [] })
+  const wrapped = await open()
+  assert.equal(wrapped.signingMode, 'wrapped')
+  const wrappedHsm = new PqHsm(wrapped)
+  const { publicKey: wrappedKey } = await wrappedHsm.keygen('wrapped-default')
+  assert.equal(wrappedKey.length, 2592)
+  assert.deepEqual(await wrapped.listKeys(), [{ label: 'wrapped-default', alg: 'ml-dsa-87' }])
+  assert.equal(mlDsa87.verify(wrappedKey, MESSAGE, hex(await wrappedHsm.sign('wrapped-default', MESSAGE))), true)
+  wrapped.close()
+})
+
+test('a backend constructed with the 1.4.x parameterSet 0x2 keeps generating ML-DSA-65 when no algorithm is passed', async () => {
+  F.resetToken()
+  const backend = await open({ ...onToken, parameterSet: 0x2 })
+  assert.equal(backend.defaultAlgorithm, 'ml-dsa-65')
+  const hsm = new PqHsm(backend)
+  const { publicKey: pk65 } = await hsm.keygen('legacy-default')
+  const { publicKey: pk87 } = await hsm.keygen('asked-87', 'ml-dsa-87')
+  assert.deepEqual(writtenSets(), [0x2, 0x3])
+  assert.equal(pk65.length, 1952)
+  assert.equal(pk87.length, 2592)
+  assert.equal(mlDsa.verify(pk65, MESSAGE, hex(await hsm.sign('legacy-default', MESSAGE))), true)
+  assert.equal(mlDsa87.verify(pk87, MESSAGE, hex(await hsm.sign('asked-87', MESSAGE))), true)
+  backend.close()
+
+  // The same when the key is wrapped rather than generated on the token.
+  F.resetToken({ mechanisms: [] })
+  const wrapped = await open({ parameterSet: 0x2 })
+  assert.equal(wrapped.signingMode, 'wrapped')
+  const { publicKey } = await new PqHsm(wrapped).keygen('wrapped-legacy')
+  assert.equal(publicKey.length, 1952)
+  assert.deepEqual(await wrapped.listKeys(), [{ label: 'wrapped-legacy', alg: 'ml-dsa-65' }])
+  wrapped.close()
 })
 
 test('on-token generation refuses an algorithm that is not an ML-DSA parameter set', async () => {

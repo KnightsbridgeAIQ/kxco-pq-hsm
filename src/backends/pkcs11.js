@@ -88,6 +88,7 @@ export class Pkcs11Backend {
   // tried. `signingMode` reports 'on-token' only when this is true.
   #probeOk = null
   #canGenerateOnToken = false
+  #defaultAlgorithm = 'ml-dsa-87'
 
   /**
    * @param {object} opts
@@ -121,6 +122,19 @@ export class Pkcs11Backend {
         "per key: pass 'ml-dsa-87' (or 'ml-dsa-65') as the algorithm to keygen.",
       )
     }
+    // The default for a key generated without an algorithm is ML-DSA-87. A
+    // caller who still passes 0x2 asked for ML-DSA-65, and keeps getting it,
+    // rather than being moved to ML-DSA-87 without being told.
+    this.#defaultAlgorithm = parameterSet === CKP_ML_DSA_65 ? 'ml-dsa-65' : 'ml-dsa-87'
+  }
+
+  /**
+   * The algorithm PqHsm.keygen and keygenOnToken use when none is passed:
+   * 'ml-dsa-87', or 'ml-dsa-65' for a backend constructed with the 1.4.x
+   * option `parameterSet: 0x2`.
+   */
+  get defaultAlgorithm() {
+    return this.#defaultAlgorithm
   }
 
   /**
@@ -394,7 +408,8 @@ export class Pkcs11Backend {
 
   /**
    * Generate an ML-DSA key pair ON the token, at the parameter set `alg`
-   * names: 'ml-dsa-65' (CKP_ML_DSA_65) or 'ml-dsa-87' (CKP_ML_DSA_87).
+   * names: 'ml-dsa-87' (CKP_ML_DSA_87), the default, or 'ml-dsa-65'
+   * (CKP_ML_DSA_65).
    *
    * The private object is CKA_EXTRACTABLE=false and CKA_SENSITIVE=true, so the
    * token will not release it and this process never sees the private bytes at
@@ -405,7 +420,7 @@ export class Pkcs11Backend {
    * the handle it just created, this throws rather than leaving a key that
    * reports on-token custody and fails at first use.
    */
-  async keygenOnToken(label, alg = 'ml-dsa-65') {
+  async keygenOnToken(label, alg = this.#defaultAlgorithm) {
     return asOwnError('keygenOnToken', () => this.#keygenOnToken(label, alg))
   }
 

@@ -60,9 +60,11 @@ export class PqHsm {
    * Through 1.3.x there was only the second path, while `signingMode` could
    * still report 'on-token'. That is the defect this release closes.
    *
-   * The strength is chosen per key: 'ml-dsa-65' (the default) or 'ml-dsa-87'.
+   * The strength is chosen per key: 'ml-dsa-87' (the default) or 'ml-dsa-65'.
+   * A backend may name its own default: a Pkcs11Backend constructed with the
+   * 1.4.x option `parameterSet: 0x2` keeps generating ML-DSA-65.
    */
-  async keygen(label, alg = 'ml-dsa-65') {
+  async keygen(label, alg = this._backend.defaultAlgorithm ?? 'ml-dsa-87') {
     checkLabel(label)
     if (!ALGORITHMS.includes(alg)) {
       throw new KxcoPqHsmError(`unsupported algorithm '${alg}': use 'ml-dsa-65', 'ml-dsa-87' or 'ml-kem-768'`)

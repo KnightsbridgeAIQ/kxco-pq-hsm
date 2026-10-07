@@ -100,13 +100,16 @@ class GeneratingTokenBackend {
   }
 }
 
-test('an on-token backend is asked for the parameter set the key was requested at', async () => {
+test('an on-token backend is asked for the parameter set the key was requested at, and for ML-DSA-87 when none was', async () => {
   const backend = new GeneratingTokenBackend()
   const hsm = new PqHsm(backend)
   const { publicKey } = await hsm.keygen('inst-87', 'ml-dsa-87')
-  await hsm.keygen('inst-65')
-  assert.deepEqual(backend.asked, ['ml-dsa-87', 'ml-dsa-65'])
+  const { publicKey: pk65 } = await hsm.keygen('inst-65', 'ml-dsa-65')
+  const { publicKey: byDefault } = await hsm.keygen('inst-default')
+  assert.deepEqual(backend.asked, ['ml-dsa-87', 'ml-dsa-65', 'ml-dsa-87'])
   assert.equal(publicKey.length, 2592)
+  assert.equal(pk65.length, 1952)
+  assert.equal(byDefault.length, 2592)
   const sig = await hsm.sign('inst-87', Buffer.from('board resolution'))
   assert.equal(mlDsa87.verify(publicKey, 'board resolution', sig.toString('hex')), true)
   assert.equal(backend.loadSecretCalls, 0, 'the key must never be unwrapped')

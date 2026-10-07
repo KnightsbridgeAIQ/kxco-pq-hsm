@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Post-quantum key custody on the HSM you already run. ML-DSA-87 and ML-DSA-65 keys generated on a PKCS#11 token with CKA_EXTRACTABLE=false and signed with C_Sign, so the private key never enters host memory. ML-KEM-768 and an Argon2id file store included.",
   "keywords": [
     "post-quantum",
