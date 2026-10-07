@@ -2,9 +2,9 @@
 
 /**
  * A key's algorithm, fixed when it is generated. The ML-DSA parameter set is
- * chosen per key: 'ml-dsa-65' (the default) or 'ml-dsa-87'.
+ * chosen per key: 'ml-dsa-87' (the default) or 'ml-dsa-65'.
  */
-export type HsmAlgorithm = 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768'
+export type HsmAlgorithm = 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768'
 
 export interface KeyInfo {
   label: string
@@ -18,7 +18,7 @@ export declare class PqHsm {
 
   /**
    * Generate and store a keypair. Returns the public key only. The default
-   * algorithm is 'ml-dsa-65'; pass 'ml-dsa-87' for an ML-DSA-87 key.
+   * algorithm is 'ml-dsa-87'; pass 'ml-dsa-65' for an ML-DSA-65 key.
    */
   keygen(label: string, alg?: HsmAlgorithm): Promise<{ publicKey: Uint8Array }>
 

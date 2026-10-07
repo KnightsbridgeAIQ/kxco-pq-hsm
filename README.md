@@ -141,7 +141,7 @@ import { PqHsm, MemoryBackend } from 'kxco-pq-hsm'
 
 const hsm = new PqHsm(new MemoryBackend())
 
-const { publicKey } = await hsm.keygen('signing-key', 'ml-dsa-65')
+const { publicKey } = await hsm.keygen('signing-key')   // ML-DSA-87, the default
 const message = new TextEncoder().encode('payload')
 const signature = await hsm.sign('signing-key', message)
 ```
@@ -156,7 +156,7 @@ const hsm = new PqHsm(new FileBackend({
   password: process.env.HSM_PASSWORD,
 }))
 
-const { publicKey } = await hsm.keygen('prod-signing', 'ml-dsa-65')
+const { publicKey } = await hsm.keygen('prod-signing')
 const message = new TextEncoder().encode('payload')
 const signature = await hsm.sign('prod-signing', message)
 ```
@@ -176,7 +176,7 @@ const backend = await new Pkcs11Backend({
 
 const hsm = new PqHsm(backend)
 
-const { publicKey } = await hsm.keygen('prod-signing', 'ml-dsa-65')
+const { publicKey } = await hsm.keygen('prod-signing')
 const message = new TextEncoder().encode('payload')
 const signature = await hsm.sign('prod-signing', message)
 
@@ -214,14 +214,14 @@ Accepts any backend instance as its only argument.
 ### Methods
 
 ```ts
-hsm.keygen(label: string, alg?: 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
+hsm.keygen(label: string, alg?: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
 ```
-Generate and store a keypair. Returns the public key only. Default algorithm is `'ml-dsa-65'`. The ML-DSA strength is chosen per key: pass `'ml-dsa-87'` for an ML-DSA-87 key (2592-byte public key, 4627-byte signatures). On a token that generates on the token, the parameter set is written to `CKA_PARAMETER_SET` (`CKP_ML_DSA_65` = 0x2, `CKP_ML_DSA_87` = 0x3), and the public key the token returns is checked against the set asked for.
+Generate and store a keypair. Returns the public key only. Default algorithm is `'ml-dsa-87'`: a 2592-byte public key and 4627-byte signatures. The ML-DSA strength is chosen per key: pass `'ml-dsa-65'` for an ML-DSA-65 key (1952-byte public key, 3309-byte signatures). On a token that generates on the token, the parameter set is written to `CKA_PARAMETER_SET` (`CKP_ML_DSA_87` = 0x3, `CKP_ML_DSA_65` = 0x2), and the public key the token returns is checked against the set asked for.
 
 ```ts
 hsm.sign(label: string, message: Uint8Array | Buffer): Promise<Uint8Array>
 ```
-Sign `message` with the ML-DSA key stored at `label`, under the parameter set the key was generated with. Returns the signature: 3309 bytes for ML-DSA-65, 4627 for ML-DSA-87. A key whose stored bytes are the size of the other set is refused rather than used.
+Sign `message` with the ML-DSA key stored at `label`, under the parameter set the key was generated with. Returns the signature: 4627 bytes for ML-DSA-87, 3309 for ML-DSA-65. A key whose stored bytes are the size of the other set is refused rather than used.
 
 ```ts
 hsm.decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
@@ -234,9 +234,9 @@ hsm.getPublicKey(label: string): Promise<Uint8Array>
 Return the public key for `label` without performing any signing operation. An ML-DSA public key whose size is not that of its stored set is refused.
 
 ```ts
-hsm.listKeys(): Promise<Array<{ label: string, alg: 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768' }>>
+hsm.listKeys(): Promise<Array<{ label: string, alg: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768' }>>
 ```
-List all stored key labels and their algorithms. For a key found on a PKCS#11 token, the algorithm is read back from the token's `CKA_PARAMETER_SET`. A key whose value is not ML-DSA-65 or ML-DSA-87 (ML-DSA-44 included), or cannot be read, is not loaded, and using its label is refused with the reason.
+List all stored key labels and their algorithms. For a key found on a PKCS#11 token, the algorithm is read back from the token's `CKA_PARAMETER_SET`. A key whose value is not ML-DSA-87 or ML-DSA-65 (ML-DSA-44 included), or cannot be read, is not loaded, and using its label is refused with the reason.
 
 ```ts
 hsm.deleteKey(label: string): Promise<void>
@@ -266,7 +266,9 @@ new Pkcs11Backend(options: {
 
 The parameter set is a property of each key, not of the backend. The
 undocumented `parameterSet` option of 1.4.x is refused for any value other than
-the old ML-DSA-65 default; pass the algorithm to `keygen` instead.
+0x2, the old ML-DSA-65 default; pass the algorithm to `keygen` instead. A
+backend constructed with `parameterSet: 0x2` keeps generating ML-DSA-65 keys
+when `keygen` is given no algorithm.
 
 ### Error class
 
