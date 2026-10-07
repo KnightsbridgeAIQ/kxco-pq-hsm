@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.1
+
+Documentation. No source change.
+
+The package description, the opening of the README and the keywords now say
+what 1.5.0 already does: keys are generated and signed with ML-DSA-87 as well
+as ML-DSA-65. `ml-dsa-87` joins the keywords.
+
 ## 1.5.0
 ML-DSA strength is chosen per key. `keygen` takes `'ml-dsa-87'` beside
 `'ml-dsa-65'`, the default, in every backend. A key signs under the set it was

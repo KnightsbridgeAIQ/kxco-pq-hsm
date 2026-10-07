@@ -1,6 +1,6 @@
 # kxco-pq-hsm
 
-**Post-quantum key custody on the HSM you already run: ML-DSA-65 keys generated on the token and signed on the token.**
+**Post-quantum key custody on the HSM you already run: ML-DSA-87 and ML-DSA-65 keys generated on the token and signed on the token.**
 
 [![npm](https://img.shields.io/npm/v/kxco-pq-hsm?label=npm&color=b0964f)](https://www.npmjs.com/package/kxco-pq-hsm)
 [![downloads](https://img.shields.io/npm/dm/kxco-pq-hsm?label=downloads&color=b0964f)](https://www.npmjs.com/package/kxco-pq-hsm)
@@ -10,7 +10,7 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 [![node](https://img.shields.io/node/v/kxco-pq-hsm.svg)](https://nodejs.org)
 
-HSM integration layer for the KXCO post-quantum stack. ML-DSA-65 signing and ML-KEM-768 decapsulation, with private key material held on the token or encrypted at rest under a key the token never releases.
+HSM integration layer for the KXCO post-quantum stack. ML-DSA-87 and ML-DSA-65 signing and ML-KEM-768 decapsulation, with private key material held on the token or encrypted at rest under a key the token never releases.
 
 - **Keys born on the token.** Supply an ML-DSA mechanism and `keygen` calls `C_GenerateKeyPair` on the token. The private object is `CKA_EXTRACTABLE=false` and `CKA_SENSITIVE=true`, the private key never enters host memory, and signing is `C_Sign` through the token handle.
 - **Custody you can prove.** `signingMode` reports `'on-token'` only after a probe signature has gone through that handle. A mechanism list is an advertisement; a signature is evidence.
@@ -321,7 +321,7 @@ above it.
 
 ## Security
 
-**ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
+**ML-DSA-87**, **ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
 Evidenced, and reproducible on your own machine:
 
