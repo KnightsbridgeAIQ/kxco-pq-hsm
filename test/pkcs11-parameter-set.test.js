@@ -17,7 +17,7 @@ import { mlDsa, mlDsa87 } from 'kxco-post-quantum'
 
 const fake = new URL('./fixtures/fake-pkcs11.js', import.meta.url).href
 // registerHooks where the runtime has it (Node 22.15 and later), and the
-// older off-thread register on Node 20, which CI still runs.
+// older off-thread register on Node 22 releases before that.
 if (typeof nodeModule.registerHooks === 'function') {
   nodeModule.registerHooks({
     resolve: (specifier, context, next) => (specifier === 'pkcs11js' ? { url: fake, shortCircuit: true } : next(specifier, context)),
