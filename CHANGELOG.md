@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.8.0 (2026-10-10)
+
+ML-KEM-1024 keys. `keygen(label, 'ml-kem-1024')` generates an ML-KEM-1024 key
+(FIPS 203, Category 5: 1568-byte public key and ciphertext, 3168-byte secret
+key) in the memory and file backends. ML-KEM-1024 keys come from kxco-pq-hsm
+when the caller asks for them; ML-KEM-768 keys stored earlier keep decrypting.
+
+`decapsulate` dispatches on the algorithm stored with the key. An
+`ml-kem-768` entry works unchanged: a store written by 1.7.0 is read by 1.8.0,
+alone and after a 1024 key is added to it. A key of one set is not used as the
+other: a 768 ciphertext against a 1024 key (or the reverse) is refused, and so
+is an entry whose stored secret key is the size of the other set. A damaged
+ciphertext of the right length still gives an unrelated secret, as FIPS 203
+implicit rejection specifies.
+
+Nothing changes for ML-DSA. On-token PKCS#11 generation stays ML-DSA only.
+Typings and the README name the new algorithm.
+
 ## 1.7.0 (2026-10-09)
 
 Runtime support. No change to the API or its behaviour.
