@@ -1,4 +1,4 @@
-import { mlDsa, mlDsa87, mlKem } from 'kxco-post-quantum'
+import { mlDsa, mlDsa87, mlKem, mlKem1024 } from 'kxco-post-quantum'
 import { KxcoPqHsmError } from './errors.js'
 
 // The ML-DSA parameter sets a signing key may be. The set is chosen when the
@@ -9,9 +9,24 @@ const ML_DSA = {
   'ml-dsa-65': { sign: mlDsa.sign,   keygen: () => mlDsa.ml_dsa65.keygen(),   publicKey: 1952, secretKey: 4032 },
   'ml-dsa-87': { sign: mlDsa87.sign, keygen: () => mlDsa87.ml_dsa87.keygen(), publicKey: 2592, secretKey: 4896 },
 }
-const ALGORITHMS = [...Object.keys(ML_DSA), 'ml-kem-768']
+// The ML-KEM parameter sets. Decapsulation dispatches on the stored alg, and
+// a ciphertext or stored secret of the other set's size is refused.
+const ML_KEM = {
+  'ml-kem-768':  { decapsulate: mlKem.decapsulate,     keygen: () => mlKem.ml_kem768.keygen(),     ciphertext: 1088, secretKey: 2400 },
+  'ml-kem-1024': { decapsulate: mlKem1024.decapsulate, keygen: () => mlKem1024.ml_kem1024.keygen(), ciphertext: 1568, secretKey: 3168 },
+}
+const ALGORITHMS = [...Object.keys(ML_DSA), ...Object.keys(ML_KEM)]
 
 const mlDsaSet = (alg) => (typeof alg === 'string' && Object.hasOwn(ML_DSA, alg) ? ML_DSA[alg] : null)
+const mlKemSet = (alg) => (typeof alg === 'string' && Object.hasOwn(ML_KEM, alg) ? ML_KEM[alg] : null)
+
+// Names the ML-KEM set whose ciphertexts or secret keys are `length` bytes.
+function kemSizeOf(length, part) {
+  if (typeof length !== 'number') return 'no length'
+  const match = Object.keys(ML_KEM).find((alg) => ML_KEM[alg][part] === length)
+  const named = part === 'ciphertext' ? 'ciphertext' : 'secret key'
+  return match ? `${length} bytes, the size of an ${match} ${named}` : `${length} bytes`
+}
 
 // Names the set whose keys are `length` bytes, for a refusal message.
 function sizeOf(length, part) {
@@ -67,7 +82,7 @@ export class PqHsm {
   async keygen(label, alg = this._backend.defaultAlgorithm ?? 'ml-dsa-87') {
     checkLabel(label)
     if (!ALGORITHMS.includes(alg)) {
-      throw new KxcoPqHsmError(`unsupported algorithm '${alg}': use 'ml-dsa-65', 'ml-dsa-87' or 'ml-kem-768'`)
+      throw new KxcoPqHsmError(`unsupported algorithm '${alg}': use 'ml-dsa-65', 'ml-dsa-87', 'ml-kem-768' or 'ml-kem-1024'`)
     }
     const dsa = mlDsaSet(alg)
 
@@ -85,7 +100,7 @@ export class PqHsm {
       return generated
     }
 
-    const kp = dsa ? dsa.keygen() : mlKem.ml_kem768.keygen()
+    const kp = (dsa ?? mlKemSet(alg)).keygen()
 
     await this._backend.store(label, alg, kp.publicKey, kp.secretKey)
     kp.secretKey.fill(0)
@@ -143,18 +158,31 @@ export class PqHsm {
     checkLabel(label)
     const ct = bytes(ciphertext, 'ciphertext')
     const { alg, secretKey } = await this._backend.loadSecret(label)
-    if (alg !== 'ml-kem-768') {
-      throw new KxcoPqHsmError(`key '${label}' is ${alg} — decapsulate requires ml-kem-768`)
-    }
     try {
-      return new Uint8Array(
-        mlKem.decapsulate(ct, new Uint8Array(secretKey))
-      )
-    } catch (e) {
-      // A ciphertext of the wrong length, or a stored secret that is not an
-      // ML-KEM-768 key. A well-formed but wrong ciphertext does not throw: it
-      // gives an unrelated secret, as FIPS 203 implicit rejection specifies.
-      throw new KxcoPqHsmError(`cannot decapsulate with '${label}': ${e.message}`)
+      // The stored set decides how the key decapsulates.
+      const kem = mlKemSet(alg)
+      if (!kem) {
+        throw new KxcoPqHsmError(`key '${label}' is ${alg}: decapsulate requires ml-kem-768 or ml-kem-1024`)
+      }
+      if (secretKey.length !== kem.secretKey) {
+        throw new KxcoPqHsmError(
+          `key '${label}' is stored as ${alg} but its secret key is ${kemSizeOf(secretKey.length, 'secretKey')}, ` +
+          `not ${kem.secretKey}: a key of one parameter set is not used as another`,
+        )
+      }
+      if (ct.length !== kem.ciphertext) {
+        throw new KxcoPqHsmError(
+          `key '${label}' is ${alg} but the ciphertext is ${kemSizeOf(ct.length, 'ciphertext')}, ` +
+          `not ${kem.ciphertext}: a ciphertext of one parameter set is not decapsulated by a key of another`,
+        )
+      }
+      try {
+        return new Uint8Array(kem.decapsulate(ct, new Uint8Array(secretKey)))
+      } catch (e) {
+        // A well-formed but wrong ciphertext does not throw: it gives an
+        // unrelated secret, as FIPS 203 implicit rejection specifies.
+        throw new KxcoPqHsmError(`cannot decapsulate with '${label}': ${e.message}`)
+      }
     } finally {
       secretKey.fill(0)
     }

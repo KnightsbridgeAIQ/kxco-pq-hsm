@@ -10,7 +10,7 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 [![node](https://img.shields.io/node/v/kxco-pq-hsm.svg)](https://nodejs.org)
 
-HSM integration layer for the KXCO post-quantum stack. ML-DSA-87 and ML-DSA-65 signing and ML-KEM-768 decapsulation, with private key material held on the token or encrypted at rest under a key the token never releases.
+HSM integration layer for the KXCO post-quantum stack. ML-DSA-87 and ML-DSA-65 signing and ML-KEM-1024 and ML-KEM-768 decapsulation, with private key material held on the token or encrypted at rest under a key the token never releases.
 
 - **Keys born on the token.** Supply an ML-DSA mechanism and `keygen` calls `C_GenerateKeyPair` on the token. The private object is `CKA_EXTRACTABLE=false` and `CKA_SENSITIVE=true`, the private key never enters host memory, and signing is `C_Sign` through the token handle.
 - **Custody you can prove.** `signingMode` reports `'on-token'` only after a probe signature has gone through that handle. A mechanism list is an advertisement; a signature is evidence.
@@ -214,7 +214,7 @@ Accepts any backend instance as its only argument.
 ### Methods
 
 ```ts
-hsm.keygen(label: string, alg?: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
+hsm.keygen(label: string, alg?: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-1024' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
 ```
 Generate and store a keypair. Returns the public key only. Default algorithm is `'ml-dsa-87'`: a 2592-byte public key and 4627-byte signatures. The ML-DSA strength is chosen per key: pass `'ml-dsa-65'` for an ML-DSA-65 key (1952-byte public key, 3309-byte signatures). On a token that generates on the token, the parameter set is written to `CKA_PARAMETER_SET` (`CKP_ML_DSA_87` = 0x3, `CKP_ML_DSA_65` = 0x2), and the public key the token returns is checked against the set asked for.
 
@@ -226,7 +226,7 @@ Sign `message` with the ML-DSA key stored at `label`, under the parameter set th
 ```ts
 hsm.decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
 ```
-Decapsulate a KEM ciphertext with the ML-KEM-768 key at `label`. Returns the shared secret.
+Decapsulate a KEM ciphertext with the ML-KEM key at `label`, under the parameter set the key was generated with. Returns the shared secret. New keys in KXCO's packages and platform services use ML-KEM-1024 (FIPS 203, Category 5); ML-KEM-768 keys made earlier keep decrypting. A 768 ciphertext against a 1024 key, or the reverse, is refused, as is an entry whose stored bytes are the size of the other set. On-token generation is ML-DSA only: ML-KEM keys are generated in the process and held in the backend wrapped or encrypted at rest.
 
 ```ts
 hsm.getPublicKey(label: string): Promise<Uint8Array>
@@ -234,7 +234,7 @@ hsm.getPublicKey(label: string): Promise<Uint8Array>
 Return the public key for `label` without performing any signing operation. An ML-DSA public key whose size is not that of its stored set is refused.
 
 ```ts
-hsm.listKeys(): Promise<Array<{ label: string, alg: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768' }>>
+hsm.listKeys(): Promise<Array<{ label: string, alg: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-1024' | 'ml-kem-768' }>>
 ```
 List all stored key labels and their algorithms. For a key found on a PKCS#11 token, the algorithm is read back from the token's `CKA_PARAMETER_SET`. A key whose value is not ML-DSA-87 or ML-DSA-65 (ML-DSA-44 included), or cannot be read, is not loaded, and using its label is refused with the reason.
 
@@ -323,7 +323,7 @@ above it.
 
 ## Security
 
-**ML-DSA-87**, **ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
+**ML-DSA-87**, **ML-DSA-65** (NIST FIPS 204), **ML-KEM-1024** and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
 Evidenced, and reproducible on your own machine:
 

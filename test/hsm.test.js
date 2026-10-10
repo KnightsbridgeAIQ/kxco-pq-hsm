@@ -386,9 +386,9 @@ test('PqHsm: a key stored as one ML-DSA parameter set with the bytes of the othe
   }
 })
 
-test('PqHsm: an algorithm that is not ml-dsa-65, ml-dsa-87 or ml-kem-768 is refused at keygen', async () => {
+test('PqHsm: an algorithm that is not ml-dsa-65, ml-dsa-87, ml-kem-768 or ml-kem-1024 is refused at keygen', async () => {
   const hsm = new PqHsm(new MemoryBackend())
-  for (const bad of ['ml-dsa-44', 'ML-DSA-87', 'ml-kem-1024', '', 'constructor']) {
+  for (const bad of ['ml-dsa-44', 'ML-DSA-87', 'ml-kem-512', '', 'constructor']) {
     await rejectsWithOwnError(() => hsm.keygen('k', bad), `alg ${JSON.stringify(bad)}`)
   }
   assert.deepEqual(await hsm.listKeys(), [])

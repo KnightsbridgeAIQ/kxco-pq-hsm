@@ -2,9 +2,10 @@
 
 /**
  * A key's algorithm, fixed when it is generated. The ML-DSA parameter set is
- * chosen per key: 'ml-dsa-87' (the default) or 'ml-dsa-65'.
+ * chosen per key: 'ml-dsa-87' (the default) or 'ml-dsa-65'. A KEM key is
+ * 'ml-kem-1024' or 'ml-kem-768'.
  */
-export type HsmAlgorithm = 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768'
+export type HsmAlgorithm = 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-1024' | 'ml-kem-768'
 
 export interface KeyInfo {
   label: string
@@ -18,7 +19,8 @@ export declare class PqHsm {
 
   /**
    * Generate and store a keypair. Returns the public key only. The default
-   * algorithm is 'ml-dsa-87'; pass 'ml-dsa-65' for an ML-DSA-65 key.
+   * algorithm is 'ml-dsa-87'; pass 'ml-dsa-65' for an ML-DSA-65 key, or
+   * 'ml-kem-1024' (FIPS 203, Category 5) for a KEM key.
    */
   keygen(label: string, alg?: HsmAlgorithm): Promise<{ publicKey: Uint8Array }>
 
@@ -29,7 +31,12 @@ export declare class PqHsm {
    */
   sign(label: string, message: Uint8Array | Buffer): Promise<Uint8Array>
 
-  /** Decapsulate a KEM ciphertext with the ML-KEM-768 key at `label`. */
+  /**
+   * Decapsulate a KEM ciphertext with the ML-KEM key at `label`, under the
+   * parameter set the key was generated with ('ml-kem-1024' or 'ml-kem-768').
+   * A ciphertext of the other set's size, or a stored key of the other set's
+   * size, is refused.
+   */
   decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
 
   /**
