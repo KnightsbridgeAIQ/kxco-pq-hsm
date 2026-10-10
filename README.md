@@ -226,7 +226,7 @@ Sign `message` with the ML-DSA key stored at `label`, under the parameter set th
 ```ts
 hsm.decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
 ```
-Decapsulate a KEM ciphertext with the ML-KEM key at `label`, under the parameter set the key was generated with. Returns the shared secret. New keys in KXCO's packages and platform services use ML-KEM-1024 (FIPS 203, Category 5); ML-KEM-768 keys made earlier keep decrypting. A 768 ciphertext against a 1024 key, or the reverse, is refused, as is an entry whose stored bytes are the size of the other set. On-token generation is ML-DSA only: ML-KEM keys are generated in the process and held in the backend wrapped or encrypted at rest.
+Decapsulate a KEM ciphertext with the ML-KEM key at `label`, under the parameter set the key was generated with. Returns the shared secret. ML-KEM-1024 (FIPS 203, Category 5) is the set to choose for new KEM keys in kxco-pq-hsm; ML-KEM-768 keys stored earlier keep decrypting. A 768 ciphertext against a 1024 key, or the reverse, is refused, as is an entry whose stored bytes are the size of the other set. On-token generation is ML-DSA only: ML-KEM keys are generated in the process and held in the backend wrapped or encrypted at rest.
 
 ```ts
 hsm.getPublicKey(label: string): Promise<Uint8Array>
