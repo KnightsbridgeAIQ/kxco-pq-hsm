@@ -4,9 +4,8 @@
 
 ML-KEM-1024 keys. `keygen(label, 'ml-kem-1024')` generates an ML-KEM-1024 key
 (FIPS 203, Category 5: 1568-byte public key and ciphertext, 3168-byte secret
-key) in the memory and file backends. New keys in KXCO's packages and platform
-services use ML-KEM-1024 (FIPS 203, Category 5); ML-KEM-768 keys made earlier
-keep decrypting.
+key) in the memory and file backends. ML-KEM-1024 keys come from kxco-pq-hsm
+when the caller asks for them; ML-KEM-768 keys stored earlier keep decrypting.
 
 `decapsulate` dispatches on the algorithm stored with the key. An
 `ml-kem-768` entry works unchanged: a store written by 1.7.0 is read by 1.8.0,
