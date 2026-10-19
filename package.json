@@ -74,7 +74,7 @@
   "dependencies": {
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
-    "kxco-post-quantum": "^1.10.0"
+    "kxco-post-quantum": "^1.11.1"
   },
   "optionalDependencies": {
     "pkcs11js": "^2.1.0"
