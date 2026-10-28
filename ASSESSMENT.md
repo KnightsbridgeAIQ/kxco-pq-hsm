@@ -49,9 +49,11 @@ Two boundaries worth naming because they decide what to test:
 - **The PKCS#11 module is the vendor's.** What happens between that library and
   the hardware, including the transport to a network HSM, is their design and
   their certificate's scope.
-- **On-token generation covers ML-DSA.** `decapsulate` unwraps ML-KEM into host
-  memory, so the two are not symmetric and a migration plan should not assume
-  they are.
+- **On-token generation covers ML-DSA, and ML-KEM when `mlKemMechanism` is
+  set.** Without that option, `decapsulate` unwraps ML-KEM into host memory. With
+  it, ML-KEM keys are generated and decapsulated on the token through PKCS#11
+  v3.2 `C_DecapsulateKey`, tested against kryoptic on Linux and not yet against a
+  hardware token. The shared secret is returned to the process in both modes.
 
 Nothing in `src/` opens a socket. The only external interface is the PKCS#11
 module on the local machine.

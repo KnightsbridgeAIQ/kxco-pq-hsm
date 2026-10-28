@@ -40,6 +40,12 @@ export declare class PqHsm {
   decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
 
   /**
+   * Where an ML-KEM decapsulation is performed: 'on-token' once the backend
+   * has decapsulated on the token and matched, otherwise 'in-process'.
+   */
+  readonly decapsulationMode: 'on-token' | 'in-process'
+
+  /**
    * Return the public key for `label`. An ML-DSA public key whose size is not
    * that of its stored parameter set is refused.
    */
@@ -93,6 +99,15 @@ export interface Pkcs11BackendOptions {
   mlDsaMechanism?: number
   /** The token's ML-DSA key-pair generation mechanism. Default `0x1c`. */
   mlDsaKeyPairGenMechanism?: number
+  /**
+   * The token's ML-KEM mechanism, CKM_ML_KEM (0x17). Supplying it enables
+   * on-token ML-KEM generation and decapsulation through PKCS#11 v3.2
+   * C_DecapsulateKey, which needs the optional `koffi` dependency. `open()`
+   * refuses to start if the token does not offer it.
+   */
+  mlKemMechanism?: number
+  /** The token's ML-KEM key-pair generation mechanism. Default `0x0f`. */
+  mlKemKeyPairGenMechanism?: number
 }
 
 /**

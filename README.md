@@ -85,8 +85,33 @@ token, so persist them yourself when you need them across restarts.
   production keys belong on hardware.
 - **`signingMode` is reported per token.** Wrapped and on-token keys can sit on
   one backend side by side.
-- **ML-DSA generates and signs on the token.** ML-KEM decapsulation runs through
-  the wrapped path.
+- **ML-DSA generates and signs on the token.** ML-KEM generates and
+  decapsulates on the token too when `mlKemMechanism` is set; without it, ML-KEM
+  runs through the wrapped path as before.
+
+## On-token ML-KEM
+
+Pass `mlKemMechanism: 0x17` (`CKM_ML_KEM`) and the backend generates ML-KEM-1024
+and ML-KEM-768 keys on the token with `C_GenerateKeyPair`, and decapsulates
+there with the PKCS#11 v3.2 `C_DecapsulateKey`. The private object is
+`CKA_SENSITIVE=true` and `CKA_EXTRACTABLE=false`, so the private key never enters
+this process. The 32-byte shared secret does, because returning it is what
+`decapsulate` is for.
+
+```js
+const backend = await new Pkcs11Backend({ libraryPath, pin, mlKemMechanism: 0x17 }).open()
+const hsm = new PqHsm(backend)
+await hsm.keygen('kem', 'ml-kem-1024')
+hsm.decapsulationMode   // 'on-token' once a decapsulation on the token has matched
+```
+
+`pkcs11js` binds only the v2.40 function list, so `C_DecapsulateKey` is called
+through the optional dependency `koffi` on the session `pkcs11js` opened. `open()`
+refuses to start if the token does not offer both ML-KEM mechanisms.
+`test/pkcs11-ml-kem.integration.test.js` proves it against kryoptic, a PKCS#11
+v3.2 software token, on Linux x86_64 (`ci/Dockerfile.kryoptic`,
+`npm run test:kryoptic`). It has not been run against a hardware token. Keys
+wrapped before the option was set keep decapsulating in the process.
 
 ## Testing on-token custody
 

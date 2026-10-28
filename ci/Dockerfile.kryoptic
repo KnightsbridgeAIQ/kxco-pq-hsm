@@ -1,0 +1,11 @@
+# A PKCS#11 v3.2 software token with ML-KEM, for test/pkcs11-ml-kem.integration.test.js.
+# Kryoptic implements C_EncapsulateKey and C_DecapsulateKey on OpenSSL 3.5.
+FROM fedora:44
+RUN dnf -y install kryoptic opensc gcc-c++ make python3 xz tar && dnf clean all
+ARG NODE_VER=v26.12.1
+RUN curl -fsSL https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+COPY ci/kryoptic-token.sh /usr/local/bin/kryoptic-token.sh
+ENV KRYOPTIC_CONF=/tmp/kry/token.conf \
+    HSM_ML_KEM_LIBRARY_PATH=/usr/lib64/pkcs11/libkryoptic_pkcs11.so \
+    HSM_PIN=1234
+WORKDIR /work
