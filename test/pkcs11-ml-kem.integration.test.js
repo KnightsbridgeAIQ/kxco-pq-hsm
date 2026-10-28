@@ -86,6 +86,91 @@ test('the token holds the private keys as sensitive and never extractable', { sk
   }
 })
 
+test('the shared-secret object is destroyed after every decapsulation, even when reading it fails', { skip }, async () => {
+  const { default: pkcs11js } = await import('pkcs11js')
+  // The control below needs one read of a secret's value to fail. pkcs11js
+  // methods are native, so the class is swapped for one that wraps the read on
+  // each instance, before the backend constructs its own.
+  const Original = pkcs11js.PKCS11
+  let armed = false
+  pkcs11js.PKCS11 = class extends Original {
+    constructor(...args) {
+      super(...args)
+      const read = this.C_GetAttributeValue.bind(this)
+      this.C_GetAttributeValue = (session, handle, template) => {
+        if (armed && template?.[0]?.type === pkcs11js.CKA_VALUE) {
+          armed = false
+          throw new Error('forced failure reading the shared secret')
+        }
+        return read(session, handle, template)
+      }
+    }
+  }
+  const b = await backend().open()
+  // A second view of the same token in this process, to count the session
+  // objects the backend's own session creates. The library is already
+  // initialised by the backend, so that error is expected and ignored.
+  const p = new pkcs11js.PKCS11()
+  p.load(LIB)
+  try { p.C_Initialize() } catch (e) { if (!/ALREADY_INITIALIZED/.test(e.message)) throw e }
+  const s = p.C_OpenSession(p.C_GetSlotList(true)[0], pkcs11js.CKF_SERIAL_SESSION | pkcs11js.CKF_RW_SESSION)
+  const secrets = () => {
+    p.C_FindObjectsInit(s, [
+      { type: pkcs11js.CKA_CLASS, value: pkcs11js.CKO_SECRET_KEY },
+      { type: pkcs11js.CKA_KEY_TYPE, value: 0x10 }, // CKK_GENERIC_SECRET
+    ])
+    const found = p.C_FindObjects(s, 100)
+    p.C_FindObjectsFinal(s)
+    return found.length
+  }
+  try {
+    const hsm = new PqHsm(b)
+    const label = LABELS['ml-kem-1024']
+    const publicKey = await hsm.getPublicKey(label)
+    const { cipherText, sharedSecret } = mlKem1024.encapsulate(publicKey)
+
+    const before = secrets()
+    assert.deepEqual(Buffer.from(await hsm.decapsulate(label, cipherText)), Buffer.from(sharedSecret))
+    assert.equal(secrets(), before, 'no secret object is left after a decapsulation')
+
+    // The control: make the read of the secret's value fail once. The object
+    // was created on the token before the read, so only the cleanup removes it.
+    armed = true
+    await assert.rejects(hsm.decapsulate(label, cipherText), /forced failure/)
+    assert.equal(armed, false, 'the forced failure fired')
+    assert.equal(secrets(), before, 'no secret object is left after a failed read')
+  } finally {
+    pkcs11js.PKCS11 = Original
+    p.C_CloseSession(s)
+    b.close()
+  }
+})
+
+test('a wrapped key and a token key side by side each decapsulate on their own path', { skip }, async () => {
+  const b = await backend().open()
+  try {
+    const hsm = new PqHsm(b)
+    let onToken = 0
+    const decapsulateOnToken = b.decapsulateOnToken.bind(b)
+    b.decapsulateOnToken = async (...args) => { onToken++; return decapsulateOnToken(...args) }
+
+    // A key wrapped under the token's AES key, as before mlKemMechanism existed.
+    const kp = mlKem.ml_kem768.keygen()
+    await b.store('kem-768-wrapped-it', 'ml-kem-768', kp.publicKey, kp.secretKey)
+    const w = mlKem.encapsulate(kp.publicKey)
+    assert.deepEqual(Buffer.from(await hsm.decapsulate('kem-768-wrapped-it', w.cipherText)), Buffer.from(w.sharedSecret))
+    assert.equal(onToken, 0, 'the wrapped key decapsulated in the process')
+
+    const label = LABELS['ml-kem-768']
+    const t = mlKem.encapsulate(await hsm.getPublicKey(label))
+    assert.deepEqual(Buffer.from(await hsm.decapsulate(label, t.cipherText)), Buffer.from(t.sharedSecret))
+    assert.equal(onToken, 1, 'the token key decapsulated on the token')
+    await b.deleteKey('kem-768-wrapped-it')
+  } finally {
+    b.close()
+  }
+})
+
 test('a restarted backend finds the token keys and decapsulates with them', { skip }, async () => {
   const b = await backend().open()
   try {

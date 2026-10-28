@@ -40,7 +40,7 @@ async function loadKoffi() {
     _koffi = imported.default ?? imported
     return _koffi
   } catch {
-    throw new KxcoPqHsmError('koffi is not installed — run: npm install koffi (needed for on-token ML-KEM)')
+    throw new KxcoPqHsmError('koffi is not installed: run npm install koffi, which on-token ML-KEM needs')
   }
 }
 

@@ -109,8 +109,11 @@ export class Pkcs11Backend {
   #mlKemKeyPairGenMechanism = null
   #kemOnToken = false
   // Whether a decapsulation has actually happened on the token. null until
-  // tried. `kemMode` reports 'on-token' only when this is true.
+  // tried. `kemMode` reports 'on-token' only when this is true. Once true it
+  // stays true: a later probe that fails is about that key, which is refused.
   #kemProbeOk = null
+  // Why the last failed probe failed, for the error a caller sees.
+  #kemProbeReason = null
   // C_DecapsulateKey, bound through the PKCS#11 v3.2 interface by open().
   #decapsulate = null
 
@@ -464,15 +467,19 @@ export class Pkcs11Backend {
    */
   async #kemProbe(label) {
     const entry = this.#store.get(label)
+    let ok = false
     try {
       const { cipherText, sharedSecret } = KEM_ENCAPSULATE[entry.alg](unb64u(entry.publicKey))
       const recovered = await this.#decapsulateHandle(entry.handle, cipherText)
-      this.#kemProbeOk = Buffer.from(recovered).equals(Buffer.from(sharedSecret))
+      ok = Buffer.from(recovered).equals(Buffer.from(sharedSecret))
       recovered.fill(0)
-    } catch {
-      this.#kemProbeOk = false
+      if (!ok) this.#kemProbeReason = 'the token decapsulated to a different shared secret'
+    } catch (e) {
+      this.#kemProbeReason = e?.message ?? String(e)
     }
-    return this.#kemProbeOk
+    if (ok) this.#kemProbeOk = true
+    else if (this.#kemProbeOk === null) this.#kemProbeOk = false
+    return ok
   }
 
   /**
@@ -707,9 +714,14 @@ export class Pkcs11Backend {
     this.#store.set(label, { alg, handle: privateHandle, publicHandle, publicKey: b64u(value) })
 
     if (!(await this.#kemProbe(label))) {
+      // Do not leave a key behind that the token will not use.
+      for (const h of [privateHandle, publicHandle]) {
+        try { this.#p11.C_DestroyObject(this.#session, h) } catch { /* best-effort */ }
+      }
+      this.#store.delete(label)
       throw new KxcoPqHsmError(
-        `token generated an ML-KEM key pair for '${label}' but its decapsulation did not match. ` +
-        'Refusing to report on-token custody for a key the token will not use.',
+        `token generated an ML-KEM key pair for '${label}' but could not decapsulate with it ` +
+        `(${this.#kemProbeReason}). The key was destroyed rather than reported as on-token.`,
       )
     }
     return { publicKey: new Uint8Array(value) }
