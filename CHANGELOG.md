@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.2 (2026-10-29)
+
+Documentation only. No source file changed and the API is the same.
+
+- The README entry for decapsulate said on-token generation was ML-DSA only. Since 1.9.0, with the mlKemMechanism option set, the PKCS#11 backend generates ML-KEM keys on the token and decapsulates there. Without it, ML-KEM keys are generated in the process and held wrapped or encrypted at rest, as before.
+
 ## 1.9.1 (2026-10-29)
 
 Dependencies. No source file changed and the API is the same.
