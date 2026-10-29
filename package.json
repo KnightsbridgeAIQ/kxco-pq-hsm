@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-hsm",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Post-quantum key custody on the HSM you already run. ML-DSA-87 and ML-DSA-65 keys generated on a PKCS#11 token with CKA_EXTRACTABLE=false and signed with C_Sign, so the private key never enters host memory. ML-KEM-1024 and ML-KEM-768, and an Argon2id file store, included.",
   "keywords": [
     "post-quantum",
@@ -74,11 +74,11 @@
   "dependencies": {
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
-    "kxco-post-quantum": "^1.11.1"
+    "kxco-post-quantum": "^1.13.0"
   },
   "optionalDependencies": {
-    "pkcs11js": "^2.1.0",
-    "koffi": "^3.3.5"
+    "koffi": "^3.3.5",
+    "pkcs11js": "^2.1.0"
   },
   "scripts": {
     "test": "node --test test/hsm.test.js test/signing-mode.test.js test/pkcs11-parameter-set.test.js test/property.test.js test/ml-kem-1024.test.js test/kem-on-token.test.js",
