@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.9.0 (unreleased)
+
+**On-token ML-KEM.** With `mlKemMechanism: 0x17`, `Pkcs11Backend` generates
+ML-KEM-1024 and ML-KEM-768 keys on the token and decapsulates there, so the
+private key never enters the process. The private object is `CKA_SENSITIVE=true`
+and `CKA_EXTRACTABLE=false`. A decapsulation on the token must match an
+encapsulation to its public key before `decapsulationMode` reports `'on-token'`,
+and a restarted backend reloads the keys from the token with their parameter
+set read back from `CKA_PARAMETER_SET`.
+
+`pkcs11js` has no PKCS#11 v3.2 functions, so `C_DecapsulateKey` is called
+through `koffi` (MIT, prebuilt binaries), a new optional dependency, on the
+session `pkcs11js` opened. Without `mlKemMechanism` nothing changes: ML-KEM keys
+stay wrapped, and keys wrapped earlier keep decapsulating.
+
+Tested against kryoptic, a PKCS#11 v3.2 software token, on Linux x86_64:
+`test/pkcs11-ml-kem.integration.test.js` (`npm run test:kryoptic`,
+`ci/Dockerfile.kryoptic`). It has not been run against a hardware token.
+`test/kem-on-token.test.js` covers the PqHsm routing.
+
 ## 1.8.0 (2026-10-10)
 
 ML-KEM-1024 keys. `keygen(label, 'ml-kem-1024')` generates an ML-KEM-1024 key

@@ -1,5 +1,7 @@
 import { endianness } from 'node:os'
+import { mlKem, mlKem1024 } from 'kxco-post-quantum'
 import { KxcoPqHsmError } from '../errors.js'
+import { bindDecapsulate } from './pkcs11-v32.js'
 
 // Lazy-load pkcs11js so the package installs cleanly without it if only using other backends
 let _pkcs11mod = null
@@ -48,6 +50,20 @@ const CKP_ML_DSA_87           = 0x3
 const PARAMETER_SET_OF = new Map([['ml-dsa-65', CKP_ML_DSA_65], ['ml-dsa-87', CKP_ML_DSA_87]])
 const ALGORITHM_OF = new Map([...PARAMETER_SET_OF].map(([alg, value]) => [value, alg]))
 
+// ML-KEM, PKCS#11 v3.2. The same header, and the same rule: the token records
+// each key's parameter set in CKA_PARAMETER_SET, and a key is read back as the
+// set the token says it is. ML-KEM-512 (0x1) is not a set this package uses.
+const CKM_ML_KEM_KEY_PAIR_GEN = 0x0f
+const CKM_ML_KEM              = 0x17
+const CKK_ML_KEM              = 0x49
+const CKK_GENERIC_SECRET      = 0x10
+const CKA_ENCAPSULATE         = 0x633
+const CKA_DECAPSULATE         = 0x634
+const KEM_PARAMETER_SET_OF = new Map([['ml-kem-768', 0x2], ['ml-kem-1024', 0x3]])
+const KEM_ALGORITHM_OF = new Map([...KEM_PARAMETER_SET_OF].map(([alg, value]) => [value, alg]))
+// Encapsulation to the token's own public key, in software, for the probe.
+const KEM_ENCAPSULATE = { 'ml-kem-768': mlKem.encapsulate, 'ml-kem-1024': mlKem1024.encapsulate }
+
 // pkcs11js returns every attribute as its raw bytes. A CK_ULONG is the size
 // of the platform's unsigned long (8 bytes on 64-bit Linux and macOS, 4 on
 // Windows) in the platform's byte order.
@@ -89,6 +105,17 @@ export class Pkcs11Backend {
   #probeOk = null
   #canGenerateOnToken = false
   #defaultAlgorithm = 'ml-dsa-87'
+  #mlKemMechanism = null
+  #mlKemKeyPairGenMechanism = null
+  #kemOnToken = false
+  // Whether a decapsulation has actually happened on the token. null until
+  // tried. `kemMode` reports 'on-token' only when this is true. Once true it
+  // stays true: a later probe that fails is about that key, which is refused.
+  #kemProbeOk = null
+  // Why the last failed probe failed, for the error a caller sees.
+  #kemProbeReason = null
+  // C_DecapsulateKey, bound through the PKCS#11 v3.2 interface by open().
+  #decapsulate = null
 
   /**
    * @param {object} opts
@@ -96,10 +123,13 @@ export class Pkcs11Backend {
    * @param {number}  [opts.slot=0]     Index into C_GetSlotList(true) result
    * @param {string}  opts.pin          User PIN
    * @param {string}  [opts.wrapKeyLabel='kxco-pq-wrap']  Label for the AES-256 wrapping key
+   * @param {number}  [opts.mlKemMechanism]  CKM_ML_KEM (0x17) to generate and decapsulate ML-KEM keys on the token
+   * @param {number}  [opts.mlKemKeyPairGenMechanism=0x0f]  CKM_ML_KEM_KEY_PAIR_GEN
    */
   constructor({
     libraryPath, slot = 0, pin, wrapKeyLabel = 'kxco-pq-wrap',
     mlDsaMechanism, mlDsaKeyPairGenMechanism, parameterSet,
+    mlKemMechanism, mlKemKeyPairGenMechanism,
   } = {}) {
     if (!libraryPath) throw new KxcoPqHsmError('Pkcs11Backend: libraryPath is required')
     if (!pin)         throw new KxcoPqHsmError('Pkcs11Backend: pin is required')
@@ -111,6 +141,9 @@ export class Pkcs11Backend {
     // Defaulted rather than required: a token that offers CKM_ML_DSA almost
     // always offers the matching key-pair-gen mechanism at the spec value.
     this.#mlDsaKeyPairGenMechanism = mlDsaKeyPairGenMechanism ?? CKM_ML_DSA_KEY_PAIR_GEN
+    // Opt-in, as ML-DSA is: without it, ML-KEM keys are wrapped as before.
+    this.#mlKemMechanism = mlKemMechanism ?? null
+    this.#mlKemKeyPairGenMechanism = mlKemKeyPairGenMechanism ?? CKM_ML_KEM_KEY_PAIR_GEN
     // Through 1.4.x one parameter set applied to every key on the backend.
     // The set is now chosen per key, by the algorithm passed to keygen, so a
     // backend-wide value other than the old ML-DSA-65 default is refused
@@ -171,6 +204,27 @@ export class Pkcs11Backend {
     // about where any key lives. A caller reading it as custody was reading
     // something the package never measured.
     return this.#tokenSigning && this.#probeOk === true ? 'on-token' : 'wrapped'
+  }
+
+  /**
+   * Whether this backend generates and decapsulates ML-KEM keys on the token.
+   * Set by open() when the operator asked for it with `mlKemMechanism` and the
+   * token offers both mechanisms. It decides what to ATTEMPT; `kemMode` says
+   * what may be CLAIMED.
+   */
+  get canGenerateKemOnToken() {
+    return this.#kemOnToken
+  }
+
+  /**
+   * Where an ML-KEM private key is used, once open(): 'on-token' only after a
+   * decapsulation inside the token has matched an encapsulation to its public
+   * key; otherwise 'wrapped'. In 'on-token' the private key never leaves the
+   * token. The 32-byte shared secret it yields does enter this process, because
+   * returning it is what decapsulate is for.
+   */
+  get kemMode() {
+    return this.#kemOnToken && this.#kemProbeOk === true ? 'on-token' : 'wrapped'
   }
 
   /** Mechanisms the token advertises, populated by open(). For diagnostics. */
@@ -243,6 +297,21 @@ export class Pkcs11Backend {
         'wrapped-key signing, which keeps the key encrypted under a token-held AES key but ' +
         'unwraps it into process memory to sign.',
       )
+    }
+
+    if (this.#mlKemMechanism !== null) {
+      const missing = [this.#mlKemMechanism, this.#mlKemKeyPairGenMechanism]
+        .filter((m) => !this.#mechanisms.includes(m))
+      if (missing.length) {
+        // Asked for on-token ML-KEM and the token cannot do it: refuse, for the
+        // same reason as ML-DSA above.
+        throw new KxcoPqHsmError(
+          `mlKemMechanism needs ${missing.map((m) => '0x' + m.toString(16)).join(' and ')}, which this token ` +
+          'does not offer. Omit mlKemMechanism to keep ML-KEM keys wrapped under the token-held AES key.',
+        )
+      }
+      this.#decapsulate = await bindDecapsulate(this.#lib)
+      this.#kemOnToken = true
     }
 
     // Find or generate the persistent AES-256 wrapping key
@@ -345,6 +414,100 @@ export class Pkcs11Backend {
     // A key that came back from the token is a key we can prove custody with.
     if (this.#tokenSigning && loaded.length > 0 && this.#probeOk === null) {
       this.#probe(loaded[0])
+    }
+
+    if (this.#kemOnToken) await this.#loadTokenKemKeys()
+  }
+
+  /** The ML-KEM counterpart of #loadTokenKeys, by the same rules. */
+  async #loadTokenKemKeys() {
+    const { CKA_CLASS, CKA_KEY_TYPE, CKA_ID, CKA_VALUE, CKO_PRIVATE_KEY, CKO_PUBLIC_KEY } = await loadMod()
+    const loaded = []
+    for (const handle of this.#findAll([
+      { type: CKA_CLASS, value: CKO_PRIVATE_KEY },
+      { type: CKA_KEY_TYPE, value: CKK_ML_KEM },
+    ])) {
+      let id
+      try {
+        [{ value: id }] = this.#p11.C_GetAttributeValue(this.#session, handle, [{ type: CKA_ID }])
+      } catch { continue }
+      const label = Buffer.from(id).toString('utf8')
+      if (!label) continue
+      const pubs = this.#findAll([
+        { type: CKA_CLASS, value: CKO_PUBLIC_KEY },
+        { type: CKA_KEY_TYPE, value: CKK_ML_KEM },
+        { type: CKA_ID, value: Buffer.from(label, 'utf8') },
+      ])
+      const publicHandle = pubs[0] ?? null
+      let publicKey = null
+      if (publicHandle) {
+        try {
+          const [{ value }] = this.#p11.C_GetAttributeValue(this.#session, publicHandle, [{ type: CKA_VALUE }])
+          publicKey = b64u(value)
+        } catch { /* a token that will not release it leaves publicKey null */ }
+      }
+      const parameterSet = this.#readParameterSet(handle, publicHandle)
+      const alg = KEM_ALGORITHM_OF.get(parameterSet)
+      if (alg === undefined) {
+        this.#refused.set(label, parameterSet === null
+          ? 'its CKA_PARAMETER_SET could not be read'
+          : `its CKA_PARAMETER_SET is 0x${parameterSet.toString(16)}, which is not ML-KEM-768 (0x2) or ML-KEM-1024 (0x3)`)
+        continue
+      }
+      this.#store.set(label, { alg, handle, publicHandle, publicKey })
+      loaded.push(label)
+    }
+    if (loaded.length > 0 && this.#kemProbeOk === null) await this.#kemProbe(loaded[0])
+  }
+
+  /**
+   * Encapsulate to a token key's public key in software, decapsulate on the
+   * token, and compare. This is the only thing that promotes kemMode to
+   * 'on-token'.
+   */
+  async #kemProbe(label) {
+    const entry = this.#store.get(label)
+    let ok = false
+    try {
+      const { cipherText, sharedSecret } = KEM_ENCAPSULATE[entry.alg](unb64u(entry.publicKey))
+      const recovered = await this.#decapsulateHandle(entry.handle, cipherText)
+      ok = Buffer.from(recovered).equals(Buffer.from(sharedSecret))
+      recovered.fill(0)
+      if (!ok) this.#kemProbeReason = 'the token decapsulated to a different shared secret'
+    } catch (e) {
+      this.#kemProbeReason = e?.message ?? String(e)
+    }
+    if (ok) this.#kemProbeOk = true
+    else if (this.#kemProbeOk === null) this.#kemProbeOk = false
+    return ok
+  }
+
+  /**
+   * C_DecapsulateKey on the token, then read the shared secret out of the
+   * session object it created and destroy that object. The private key is used
+   * inside the token and never read.
+   */
+  async #decapsulateHandle(privateHandle, ciphertext) {
+    const { CKA_CLASS, CKA_KEY_TYPE, CKA_TOKEN, CKA_SENSITIVE, CKA_EXTRACTABLE, CKA_VALUE, CKO_SECRET_KEY } = await loadMod()
+    const secret = this.#decapsulate(
+      readUlong(this.#session), this.#mlKemMechanism, readUlong(privateHandle),
+      [
+        { type: CKA_CLASS, value: CKO_SECRET_KEY },
+        { type: CKA_KEY_TYPE, value: CKK_GENERIC_SECRET },
+        // A session object, readable once and destroyed below.
+        { type: CKA_TOKEN, value: false },
+        { type: CKA_SENSITIVE, value: false },
+        { type: CKA_EXTRACTABLE, value: true },
+      ],
+      ciphertext,
+    )
+    const handle = Buffer.alloc(this.#session.length)
+    if (handle.length === 8) handle.writeBigUInt64LE(BigInt(secret)); else handle.writeUInt32LE(secret)
+    try {
+      const [{ value }] = this.#p11.C_GetAttributeValue(this.#session, handle, [{ type: CKA_VALUE }])
+      return new Uint8Array(value)
+    } finally {
+      try { this.#p11.C_DestroyObject(this.#session, handle) } catch { /* best-effort */ }
     }
   }
 
@@ -494,6 +657,98 @@ export class Pkcs11Backend {
     }
 
     return { publicKey: new Uint8Array(unb64u(publicKey)) }
+  }
+
+  /**
+   * Generate an ML-KEM key pair ON the token, at the parameter set `alg`
+   * names: 'ml-kem-1024' or 'ml-kem-768'. The private object is
+   * CKA_EXTRACTABLE=false and CKA_SENSITIVE=true, and both objects are token
+   * objects. A probe decapsulation runs before returning, so a key that the
+   * token will not decapsulate with is refused rather than reported.
+   */
+  async keygenKemOnToken(label, alg = 'ml-kem-1024') {
+    return asOwnError('keygenKemOnToken', () => this.#keygenKemOnToken(label, alg))
+  }
+
+  async #keygenKemOnToken(label, alg) {
+    this.#assertOpen()
+    const parameterSet = KEM_PARAMETER_SET_OF.get(alg)
+    if (parameterSet === undefined) {
+      throw new KxcoPqHsmError(`on-token ML-KEM generation supports ml-kem-768 and ml-kem-1024, not '${alg}'`)
+    }
+    if (!this.#kemOnToken) {
+      throw new KxcoPqHsmError('on-token ML-KEM needs mlKemMechanism and a token that offers it')
+    }
+    const {
+      CKA_CLASS, CKA_KEY_TYPE, CKA_TOKEN, CKA_LABEL, CKA_ID, CKA_VALUE,
+      CKA_PRIVATE, CKA_SENSITIVE, CKA_EXTRACTABLE, CKO_PUBLIC_KEY, CKO_PRIVATE_KEY,
+    } = await loadMod()
+    const id = Buffer.from(label, 'utf8')
+    const pair = this.#p11.C_GenerateKeyPair(
+      this.#session,
+      { mechanism: this.#mlKemKeyPairGenMechanism },
+      [
+        { type: CKA_CLASS,         value: CKO_PUBLIC_KEY },
+        { type: CKA_KEY_TYPE,      value: CKK_ML_KEM },
+        { type: CKA_TOKEN,         value: true },
+        { type: CKA_LABEL,         value: label },
+        { type: CKA_ID,            value: id },
+        { type: CKA_ENCAPSULATE,   value: true },
+        { type: CKA_PARAMETER_SET, value: parameterSet },
+      ],
+      [
+        { type: CKA_CLASS,       value: CKO_PRIVATE_KEY },
+        { type: CKA_KEY_TYPE,    value: CKK_ML_KEM },
+        { type: CKA_TOKEN,       value: true },
+        { type: CKA_LABEL,       value: label },
+        { type: CKA_ID,          value: id },
+        { type: CKA_PRIVATE,     value: true },
+        { type: CKA_SENSITIVE,   value: true },
+        { type: CKA_EXTRACTABLE, value: false },
+        { type: CKA_DECAPSULATE, value: true },
+      ],
+    )
+    const publicHandle = pair.publicKey ?? pair.pubKey
+    const privateHandle = pair.privateKey ?? pair.prvKey
+    const [{ value }] = this.#p11.C_GetAttributeValue(this.#session, publicHandle, [{ type: CKA_VALUE }])
+    this.#store.set(label, { alg, handle: privateHandle, publicHandle, publicKey: b64u(value) })
+
+    if (!(await this.#kemProbe(label))) {
+      // Do not leave a key behind that the token will not use.
+      for (const h of [privateHandle, publicHandle]) {
+        try { this.#p11.C_DestroyObject(this.#session, h) } catch { /* best-effort */ }
+      }
+      this.#store.delete(label)
+      throw new KxcoPqHsmError(
+        `token generated an ML-KEM key pair for '${label}' but could not decapsulate with it ` +
+        `(${this.#kemProbeReason}). The key was destroyed rather than reported as on-token.`,
+      )
+    }
+    return { publicKey: new Uint8Array(value) }
+  }
+
+  /** Whether `label` is a key that lives on the token rather than wrapped. */
+  async isOnToken(label) {
+    const entry = this.#store.get(label)
+    return Boolean(entry?.handle && !entry.wrapped)
+  }
+
+  /**
+   * Decapsulate on the token with the ML-KEM key at `label`. Returns the
+   * 32-byte shared secret. Present for PqHsm, which calls it for token keys.
+   */
+  async decapsulateOnToken(label, ciphertext) {
+    return asOwnError('decapsulateOnToken', () => {
+      this.#assertOpen()
+      const entry = this.#entry(label)
+      if (!KEM_PARAMETER_SET_OF.has(entry.alg) || !entry.handle || entry.wrapped) {
+        throw new KxcoPqHsmError(`key '${label}' is not an ML-KEM key on the token`)
+      }
+      if (!this.#kemOnToken) {
+        throw new KxcoPqHsmError('decapsulateOnToken needs mlKemMechanism and a token that offers it')
+      }
+      return this.#decapsulateHandle(entry.handle, ciphertext)
+    })
   }
 
   /** Logout and finalise — call when done. */

@@ -12,8 +12,8 @@ const ML_DSA = {
 // The ML-KEM parameter sets. Decapsulation dispatches on the stored alg, and
 // a ciphertext or stored secret of the other set's size is refused.
 const ML_KEM = {
-  'ml-kem-768':  { decapsulate: mlKem.decapsulate,     keygen: () => mlKem.ml_kem768.keygen(),     ciphertext: 1088, secretKey: 2400 },
-  'ml-kem-1024': { decapsulate: mlKem1024.decapsulate, keygen: () => mlKem1024.ml_kem1024.keygen(), ciphertext: 1568, secretKey: 3168 },
+  'ml-kem-768':  { decapsulate: mlKem.decapsulate,     keygen: () => mlKem.ml_kem768.keygen(),     ciphertext: 1088, secretKey: 2400, publicKey: 1184 },
+  'ml-kem-1024': { decapsulate: mlKem1024.decapsulate, keygen: () => mlKem1024.ml_kem1024.keygen(), ciphertext: 1568, secretKey: 3168, publicKey: 1568 },
 }
 const ALGORITHMS = [...Object.keys(ML_DSA), ...Object.keys(ML_KEM)]
 
@@ -100,7 +100,23 @@ export class PqHsm {
       return generated
     }
 
-    const kp = (dsa ?? mlKemSet(alg)).keygen()
+    // ML-KEM on the token, where the backend offers it. Same rule as ML-DSA:
+    // the private key is made inside the token and this process never holds it.
+    const kem = mlKemSet(alg)
+    if (kem &&
+        this._backend.canGenerateKemOnToken &&
+        typeof this._backend.keygenKemOnToken === 'function') {
+      const generated = await this._backend.keygenKemOnToken(label, alg)
+      if (generated?.publicKey?.length !== kem.publicKey) {
+        throw new KxcoPqHsmError(
+          `the backend was asked for an ${alg} key for '${label}' and returned a public key of ` +
+          `${generated?.publicKey?.length ?? 'no'} bytes, not ${kem.publicKey}`,
+        )
+      }
+      return generated
+    }
+
+    const kp = (dsa ?? kem).keygen()
 
     await this._backend.store(label, alg, kp.publicKey, kp.secretKey)
     kp.secretKey.fill(0)
@@ -115,6 +131,15 @@ export class PqHsm {
    */
   get signingMode() {
     return this._backend.signingMode === 'on-token' ? 'on-token' : 'in-process'
+  }
+
+  /**
+   * Where an ML-KEM decapsulation is actually performed: 'on-token' or
+   * 'in-process'. In 'on-token' the private key never leaves the token; the
+   * shared secret it yields is returned to the caller either way.
+   */
+  get decapsulationMode() {
+    return this._backend.kemMode === 'on-token' ? 'on-token' : 'in-process'
   }
 
   async sign(label, message) {
@@ -157,6 +182,26 @@ export class PqHsm {
   async decapsulate(label, ciphertext) {
     checkLabel(label)
     const ct = bytes(ciphertext, 'ciphertext')
+
+    // A key that lives on the token decapsulates there. Keys wrapped before
+    // on-token ML-KEM was turned on keep decapsulating as they always have.
+    if (this._backend.kemMode === 'on-token' &&
+        typeof this._backend.decapsulateOnToken === 'function' &&
+        await this._backend.isOnToken?.(label)) {
+      const { alg } = await this._backend.getPublicKey(label)
+      const kem = mlKemSet(alg)
+      if (!kem) {
+        throw new KxcoPqHsmError(`key '${label}' is ${alg}: decapsulate requires ml-kem-768 or ml-kem-1024`)
+      }
+      if (ct.length !== kem.ciphertext) {
+        throw new KxcoPqHsmError(
+          `key '${label}' is ${alg} but the ciphertext is ${kemSizeOf(ct.length, 'ciphertext')}, ` +
+          `not ${kem.ciphertext}: a ciphertext of one parameter set is not decapsulated by a key of another`,
+        )
+      }
+      return new Uint8Array(await this._backend.decapsulateOnToken(label, ct))
+    }
+
     const { alg, secretKey } = await this._backend.loadSecret(label)
     try {
       // The stored set decides how the key decapsulates.
