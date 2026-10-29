@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.9.0 (unreleased)
+## 1.9.1 (2026-10-29)
+
+Dependencies. No source file changed and the API is the same.
+
+- `kxco-post-quantum` dependency floor moves from `^1.11.1` to `^1.13.0`, the current release.
+
+## 1.9.0 (2026-10-29)
 
 **On-token ML-KEM.** With `mlKemMechanism: 0x17`, `Pkcs11Backend` generates
 ML-KEM-1024 and ML-KEM-768 keys on the token and decapsulates there, so the
