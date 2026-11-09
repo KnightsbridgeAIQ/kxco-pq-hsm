@@ -78,7 +78,7 @@
   },
   "optionalDependencies": {
     "pkcs11js": "^2.1.0",
-    "koffi": "^3.3.5"
+    "koffi": "^3.3.7"
   },
   "scripts": {
     "test": "node --test test/hsm.test.js test/signing-mode.test.js test/pkcs11-parameter-set.test.js test/property.test.js test/ml-kem-1024.test.js test/kem-on-token.test.js",
