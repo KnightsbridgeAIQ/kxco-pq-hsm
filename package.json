@@ -92,7 +92,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "fast-check": "4.10.2",
+    "fast-check": "4.10.3",
     "kxco-pq-hsm-1-7-0": "npm:kxco-pq-hsm@1.7.0",
     "pkcs11js": "^2.1.6"
   }
